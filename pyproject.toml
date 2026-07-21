@@ -1,0 +1,19 @@
+[project]
+name = "interval-logic"
+version = "0.1.0"
+description = "Immutable interval logic with exact time-set semantics"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "portion>=2.6.1",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/interval_logic"]
+
+[dependency-groups]
+dev = []

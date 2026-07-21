@@ -1,0 +1,26 @@
+# Python-generated files (root and both projects)
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+/.venv/
+/evrp/.venv/
+/interval_logic/.venv/
+/routecraft/site/
+
+# Tool and notebook caches
+.cache/
+cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# EVRP runtime output
+dispatch_debug.log
+*.geojson
+*.graphml
