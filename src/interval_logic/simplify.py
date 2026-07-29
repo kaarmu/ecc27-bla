@@ -5,6 +5,7 @@ from collections.abc import Callable
 import portion as P
 
 from .ast import (
+    ALL_TIME,
     And,
     Atom,
     Bool,
@@ -21,8 +22,6 @@ from .ast import (
 )
 from .transform import lower_derived
 
-
-_ALL_TIME = P.open(-P.inf, P.inf)
 
 
 def simplify(expression: Expression) -> Expression:
@@ -61,7 +60,7 @@ def _simplify_once(expression: Expression) -> Expression:
             if interval.empty:
                 return Bool(False)
             child = _simplify_once(body)
-            if interval == _ALL_TIME or child == Bool(False):
+            if interval == ALL_TIME or child == Bool(False):
                 return child
             if isinstance(child, Restrict):
                 return Restrict(interval & child.interval, child.body)
@@ -70,7 +69,7 @@ def _simplify_once(expression: Expression) -> Expression:
             if interval.empty:
                 return Bool(True)
             child = _simplify_once(body)
-            if interval == _ALL_TIME or child == Bool(True):
+            if interval == ALL_TIME or child == Bool(True):
                 return child
             if isinstance(child, Guard):
                 return Guard(interval & child.interval, child.body)

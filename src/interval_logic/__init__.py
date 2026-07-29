@@ -1,6 +1,7 @@
 """Immutable interval logic with exact propositions and natural-number signals."""
 
 from .ast import (
+    ALL_TIME,
     And,
     Atom,
     Bool,

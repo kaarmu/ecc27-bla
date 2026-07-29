@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 import portion as P
 
+ALL_TIME = P.open(-P.inf, P.inf)
 
 class Expression(ABC):
     """Base class for immutable interval-logic expressions."""
@@ -63,6 +64,12 @@ class Expression(ABC):
 
     def guard(self, interval: P.Interval) -> Expression:
         return Guard(interval, self)
+    
+    def forall(self, interval: P.Interval) -> Expression:
+        return ForAll(interval, self)
+    
+    def exists(self, interval: P.Interval) -> Expression:
+        return Exists(interval, self)
 
 
 class DerivedExpression(Expression, ABC):
