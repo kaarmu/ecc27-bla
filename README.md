@@ -5,6 +5,11 @@ valuations and the evaluation universe are represented by `portion.Interval`
 objects. Supplied valuations and all interval operators are clipped to that
 universe during evaluation.
 
+Interval operators accept either `portion.Interval` objects or interval strings.
+Strings are parsed with `portion.from_string(value, float)`, so, for example,
+`Exists("[1, 2)", Atom("p"))` is equivalent to
+`Exists(P.closedopen(1.0, 2.0), Atom("p"))`.
+
 ```python
 import portion as P
 
@@ -74,6 +79,29 @@ assert denote(no_duplicate_job, {}, universe, signals=signals) == universe
 Use `.equals()` and `.not_equals()` to construct formulas. Python `==` remains
 structural equality so expressions and terms stay safely hashable.
 
+## Replacing subexpressions
+
+Every expression provides `replace(fn)` for immutable, bottom-up rewriting.
+Children are replaced from left to right before `fn` receives their rebuilt
+parent. Structural equality makes exact subexpressions easy to select:
+
+```python
+import interval_logic as il
+
+target = il.Signal("j").equals(1)
+formula = il.Exists("[0, 4]", target | il.Signal("j").equals(2))
+
+def negate_other_equalities(expression):
+    if isinstance(expression, il.Equal):
+        return expression if expression == target else il.Not(expression)
+    return expression
+
+rewritten = formula.replace(negate_other_equalities)
+```
+
+The callback must return an `Expression`. Terms inside `Equal` nodes are not
+visited, and expressions returned by the callback are not traversed again.
+
 ## Custom derived operators
 
 Derived operators only need to describe how they lower into the core language.
@@ -96,6 +124,16 @@ class Nand(DerivedExpression):
 
     def lower(self):
         return Not(And((self.left, self.right)))
+```
+
+`replace()` preserves derived operators and normally rebuilds them by passing
+their replacement children to the constructor positionally. A derived operator
+with additional constructor state can preserve it by overriding the protected
+hook:
+
+```python
+def _with_children(self, children):
+    return type(self)(self.label, *children)
 ```
 
 Use `simplify()` for compact, size-nonincreasing rewrites after derived operators

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .ast import (
     And,
     Atom,
@@ -15,6 +17,47 @@ from .ast import (
     Restrict,
 )
 from .errors import DerivedExpressionCycleError, DerivedExpressionError
+
+
+def replace(
+    expression: Expression,
+    fn: Callable[[Expression], Expression],
+) -> Expression:
+    """Replace expression nodes bottom-up using ``fn``."""
+
+    if not isinstance(expression, Expression):
+        raise TypeError("expression must be an Expression")
+    if not callable(fn):
+        raise TypeError("replacement function must be callable")
+    return _replace(expression, fn)
+
+
+def _replace(
+    expression: Expression,
+    fn: Callable[[Expression], Expression],
+) -> Expression:
+    children = expression.children
+    replaced_children = tuple(_replace(child, fn) for child in children)
+    if any(
+        replacement is not original
+        for original, replacement in zip(children, replaced_children)
+    ):
+        candidate = expression._with_children(replaced_children)
+        if not isinstance(candidate, Expression):
+            raise TypeError(
+                f"{type(expression).__name__}._with_children() must return "
+                "an Expression"
+            )
+    else:
+        candidate = expression
+
+    result = fn(candidate)
+    if not isinstance(result, Expression):
+        raise TypeError(
+            "replacement function must return an Expression, "
+            f"got {type(result).__name__}"
+        )
+    return result
 
 
 def lower_derived(expression: Expression) -> Expression:

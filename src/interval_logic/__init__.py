@@ -35,9 +35,13 @@ from .simplify import simplify
 from .transform import lower_derived
 from .visualize import Timeline, TimelineRow, timeline
 
+TOP = Bool(True)
+BOT = Bool(False)
+
 __all__ = [
     "And",
     "Atom",
+    "BOT",
     "Bool",
     "DerivedExpression",
     "DerivedExpressionCycleError",
@@ -58,6 +62,7 @@ __all__ = [
     "Restrict",
     "Signal",
     "SignalValuation",
+    "TOP",
     "Term",
     "Valuation",
     "Xor",

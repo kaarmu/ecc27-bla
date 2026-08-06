@@ -2,6 +2,7 @@ import itertools
 import unittest
 from dataclasses import FrozenInstanceError
 
+import interval_logic as il
 import portion as P
 
 from interval_logic import (
@@ -114,6 +115,10 @@ def natural_signal_from_points(values):
 
 
 class ConstructionTests(unittest.TestCase):
+    def test_boolean_constants_are_available_from_package_namespace(self):
+        self.assertEqual(il.TOP, il.Bool(True))
+        self.assertEqual(il.BOT, il.Bool(False))
+
     def test_nodes_are_structurally_equal_hashable_and_immutable(self):
         left = And((Atom("p"), Atom("q")))
         right = And((Atom("p"), Atom("q")))
@@ -144,6 +149,21 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(p.restrict(interval), Restrict(interval, p))
         self.assertEqual(p.guard(interval), Guard(interval, p))
         self.assertEqual(hash(p.restrict(interval)), hash(Restrict(interval, p)))
+
+    def test_interval_expressions_parse_string_arguments_as_floats(self):
+        p = Atom("p")
+        expected = P.from_string("[0, 1) | (2.5, 3]", float)
+
+        for expression_type in (Restrict, Guard, ForAll, Exists):
+            with self.subTest(expression_type=expression_type.__name__):
+                expression = expression_type("[0, 1) | (2.5, 3]", p)
+
+                self.assertIsInstance(expression.interval, P.Interval)
+                self.assertEqual(expression.interval, expected)
+                self.assertIsInstance(next(iter(expression.interval)).lower, float)
+
+        self.assertEqual(p.restrict("[0, 1)"), Restrict(P.closedopen(0.0, 1.0), p))
+        self.assertEqual(p.guard("[0, 1)"), Guard(P.closedopen(0.0, 1.0), p))
 
     def test_natural_terms_and_equality_are_immutable_and_canonical(self):
         j1, j2 = Signal("j_1"), Signal("j_2")
@@ -184,6 +204,150 @@ class ConstructionTests(unittest.TestCase):
             Equal(Signal("j"), True)
         with self.assertRaises(TypeError):
             bool(Signal("j"))
+
+
+class ReplacementTests(unittest.TestCase):
+    def test_matching_workflow_replaces_selected_equalities(self):
+        keep = Signal("j").equals(1)
+        negate = Signal("j").equals(2)
+        formula = And((keep, Exists("[0, 1]", negate)))
+
+        def rewrite(expression):
+            if isinstance(expression, il.Equal):
+                return expression if expression == keep else il.Not(expression)
+            return expression
+
+        self.assertEqual(
+            formula.replace(rewrite),
+            And((keep, Exists("[0, 1]", Not(negate)))),
+        )
+
+    def test_replacement_rebuilds_every_core_parent_shape(self):
+        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+        equality = Signal("j").equals(1)
+        formula = And(
+            (
+                Bool(True),
+                equality,
+                Not(p),
+                Or((p, q)),
+                Restrict("[0, 1]", p),
+                Guard("[1, 2]", p),
+                ForAll("[2, 3]", p),
+                Exists("[3, 4]", p),
+            )
+        )
+
+        result = formula.replace(
+            lambda expression: replacement if expression is p else expression
+        )
+
+        self.assertEqual(
+            result,
+            And(
+                (
+                    Bool(True),
+                    equality,
+                    Not(replacement),
+                    Or((replacement, q)),
+                    Restrict("[0, 1]", replacement),
+                    Guard("[1, 2]", replacement),
+                    ForAll("[2, 3]", replacement),
+                    Exists("[3, 4]", replacement),
+                )
+            ),
+        )
+
+    def test_replacement_is_bottom_up_and_left_to_right(self):
+        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+        visited = []
+
+        def rewrite(expression):
+            visited.append(expression)
+            if expression is p:
+                return replacement
+            if isinstance(expression, Not) and expression.operand is replacement:
+                return Bool(False)
+            return expression
+
+        expected = And((Bool(False), q))
+
+        self.assertEqual(And((Not(p), q)).replace(rewrite), expected)
+        self.assertEqual(visited, [p, Not(replacement), q, expected])
+
+    def test_callback_created_expression_is_not_revisited(self):
+        p, q = Atom("p"), Atom("q")
+        visited = []
+
+        def rewrite(expression):
+            visited.append(expression)
+            return Not(q)
+
+        self.assertEqual(p.replace(rewrite), Not(q))
+        self.assertEqual(visited, [p])
+
+    def test_equal_terms_are_not_visited(self):
+        equality = Signal("j").equals(1)
+        visited = []
+
+        def record(expression):
+            visited.append(expression)
+            return expression
+
+        self.assertIs(
+            equality.replace(record),
+            equality,
+        )
+        self.assertEqual(visited, [equality])
+
+    def test_no_op_replacement_preserves_original_instances(self):
+        formula = Implies(Not(Atom("p")), Exists("[0, 1]", Atom("q")))
+
+        self.assertIs(formula.replace(lambda expression: expression), formula)
+
+    def test_replacement_preserves_derived_expression_types(self):
+        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+
+        def rewrite(expression):
+            return replacement if expression is p else expression
+
+        builtin = Implies(p, q).replace(rewrite)
+        positional_custom = Nand(p, q).replace(rewrite)
+        configured_custom = TaggedDerived("tag", p).replace(rewrite)
+
+        self.assertIsInstance(builtin, Implies)
+        self.assertEqual(builtin, Implies(replacement, q))
+        self.assertIsInstance(positional_custom, Nand)
+        self.assertEqual(positional_custom.children, (replacement, q))
+        self.assertIsInstance(configured_custom, TaggedDerived)
+        self.assertEqual(configured_custom.label, "tag")
+        self.assertEqual(configured_custom.children, (replacement,))
+
+    def test_custom_derived_rebuild_failure_explains_required_hook(self):
+        p, replacement = Atom("p"), Atom("replacement")
+
+        with self.assertRaisesRegex(TypeError, "override _with_children"):
+            ConfiguredDerived("tag", p).replace(
+                lambda expression: replacement if expression is p else expression
+            )
+
+    def test_replacement_validates_callback_and_its_result(self):
+        p = Atom("p")
+
+        with self.assertRaisesRegex(TypeError, "must be callable"):
+            p.replace(None)
+        with self.assertRaisesRegex(TypeError, "must return an Expression"):
+            p.replace(lambda expression: True)
+
+    def test_callback_exceptions_propagate_unchanged(self):
+        error = RuntimeError("callback failed")
+
+        def fail(_expression):
+            raise error
+
+        with self.assertRaises(RuntimeError) as caught:
+            Atom("p").replace(fail)
+        self.assertIs(caught.exception, error)
 
 
 class PrettyPrintingTests(unittest.TestCase):
@@ -985,6 +1149,35 @@ class Nand(DerivedExpression):
 
     def lower(self):
         return Not(And((self.left, self.right)))
+
+
+class TaggedDerived(DerivedExpression):
+    def __init__(self, label, operand):
+        self.label = label
+        self.operand = operand
+
+    @property
+    def children(self):
+        return (self.operand,)
+
+    def lower(self):
+        return self.operand
+
+    def _with_children(self, children):
+        return type(self)(self.label, children[0])
+
+
+class ConfiguredDerived(DerivedExpression):
+    def __init__(self, label, operand):
+        self.label = label
+        self.operand = operand
+
+    @property
+    def children(self):
+        return (self.operand,)
+
+    def lower(self):
+        return self.operand
 
 
 class RecordingPrinter:

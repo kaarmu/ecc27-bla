@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -28,6 +29,13 @@ class Expression(ABC):
         from .simplify import simplify
 
         return simplify(self)
+
+    def replace(self, fn: Callable[[Expression], Expression]) -> Expression:
+        """Replace subexpressions bottom-up using ``fn``."""
+
+        from .transform import replace
+
+        return replace(self, fn)
 
     def __str__(self) -> str:
         from .pretty import format_expression
@@ -59,10 +67,10 @@ class Expression(ABC):
     def __ror__(self, other: Expression | bool) -> Expression:
         return Or((as_expr(other), self))
 
-    def restrict(self, interval: P.Interval) -> Expression:
+    def restrict(self, interval: P.Interval | str) -> Expression:
         return Restrict(interval, self)
 
-    def guard(self, interval: P.Interval) -> Expression:
+    def guard(self, interval: P.Interval | str) -> Expression:
         return Guard(interval, self)
     
     def forall(self, interval: P.Interval) -> Expression:
@@ -70,6 +78,32 @@ class Expression(ABC):
     
     def exists(self, interval: P.Interval) -> Expression:
         return Exists(interval, self)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        """Rebuild this node with replacement children.
+
+        The default supports derived expressions whose constructors accept
+        their children as positional arguments. Expressions with additional
+        constructor state can override this hook.
+        """
+
+        if len(children) != len(self.children):
+            raise ValueError(
+                f"{type(self).__name__} requires {len(self.children)} children, "
+                f"got {len(children)}"
+            )
+        try:
+            rebuilt = type(self)(*children)
+        except TypeError as exc:
+            raise TypeError(
+                f"{type(self).__name__} cannot be rebuilt from replacement "
+                "children; override _with_children()"
+            ) from exc
+        if not isinstance(rebuilt, Expression):
+            raise TypeError(
+                f"{type(self).__name__}._with_children() must return an Expression"
+            )
+        return rebuilt
 
 
 class DerivedExpression(Expression, ABC):
@@ -171,6 +205,9 @@ class Not(Expression):
     def children(self) -> tuple[Expression, ...]:
         return (self.operand,)
 
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Not(children[0])
+
 
 @dataclass(frozen=True, slots=True, init=False)
 class And(Expression):
@@ -183,6 +220,9 @@ class And(Expression):
     @property
     def children(self) -> tuple[Expression, ...]:
         return self.operands
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return And(children)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -197,61 +237,76 @@ class Or(Expression):
     def children(self) -> tuple[Expression, ...]:
         return self.operands
 
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Or(children)
+
 
 @dataclass(frozen=True, slots=True)
 class Restrict(Expression):
-    interval: P.Interval
+    interval: P.Interval | str
     body: Expression
 
     def __post_init__(self) -> None:
-        _require_interval(self.interval)
+        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         _require_expression(self.body, "Restrict body")
 
     @property
     def children(self) -> tuple[Expression, ...]:
         return (self.body,)
 
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Restrict(self.interval, children[0])
+
 
 @dataclass(frozen=True, slots=True)
 class Guard(Expression):
-    interval: P.Interval
+    interval: P.Interval | str
     body: Expression
 
     def __post_init__(self) -> None:
-        _require_interval(self.interval)
+        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         _require_expression(self.body, "Guard body")
 
     @property
     def children(self) -> tuple[Expression, ...]:
         return (self.body,)
 
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Guard(self.interval, children[0])
+
 
 @dataclass(frozen=True, slots=True)
 class ForAll(Expression):
-    interval: P.Interval
+    interval: P.Interval | str
     body: Expression
 
     def __post_init__(self) -> None:
-        _require_interval(self.interval)
+        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         _require_expression(self.body, "ForAll body")
 
     @property
     def children(self) -> tuple[Expression, ...]:
         return (self.body,)
 
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return ForAll(self.interval, children[0])
+
 
 @dataclass(frozen=True, slots=True)
 class Exists(Expression):
-    interval: P.Interval
+    interval: P.Interval | str
     body: Expression
 
     def __post_init__(self) -> None:
-        _require_interval(self.interval)
+        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         _require_expression(self.body, "Exists body")
 
     @property
     def children(self) -> tuple[Expression, ...]:
         return (self.body,)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Exists(self.interval, children[0])
 
 
 CoreExpression = Bool | Atom | Equal | Not | And | Or | Restrict | Guard | ForAll | Exists
@@ -332,9 +387,12 @@ def _require_name(value: object, label: str) -> None:
         raise ValueError(f"{label} name must not be empty")
 
 
-def _require_interval(value: object) -> None:
-    if not isinstance(value, P.Interval):
-        raise TypeError("interval must be a portion.Interval")
+def _coerce_interval(value: P.Interval | str) -> P.Interval:
+    if isinstance(value, P.Interval):
+        return value
+    if isinstance(value, str):
+        return P.from_string(value, float)
+    raise TypeError("interval must be a portion.Interval or string")
 
 
 def _expression_tuple(
