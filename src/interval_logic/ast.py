@@ -30,12 +30,13 @@ class Expression(ABC):
 
         return simplify(self)
 
-    def replace(self, fn: Callable[[Expression], Expression]) -> Expression:
+    def replace(self, fn: Callable[[Expression], Expression | str], *fns: Callable[[Expression], Expression | str]) -> Expression:
         """Replace subexpressions bottom-up using ``fn``."""
 
         from .transform import replace
 
-        return replace(self, fn)
+        new = replace(self, fn)
+        return new.replace(*fns) if fns else new
 
     def __str__(self) -> str:
         from .pretty import format_expression
@@ -55,16 +56,16 @@ class Expression(ABC):
     def __invert__(self) -> Expression:
         return Not(self)
 
-    def __and__(self, other: Expression | bool) -> Expression:
+    def __and__(self, other: Expression | bool | str) -> Expression:
         return And((self, as_expr(other)))
 
-    def __rand__(self, other: Expression | bool) -> Expression:
+    def __rand__(self, other: Expression | bool | str) -> Expression:
         return And((as_expr(other), self))
 
-    def __or__(self, other: Expression | bool) -> Expression:
+    def __or__(self, other: Expression | bool | str) -> Expression:
         return Or((self, as_expr(other)))
 
-    def __ror__(self, other: Expression | bool) -> Expression:
+    def __ror__(self, other: Expression | bool | str) -> Expression:
         return Or((as_expr(other), self))
 
     def restrict(self, interval: P.Interval | str) -> Expression:
@@ -110,7 +111,7 @@ class DerivedExpression(Expression, ABC):
     """Extension point for operators defined in terms of core expressions."""
 
     @abstractmethod
-    def lower(self) -> Expression:
+    def lower(self) -> Expression | str:
         """Return an equivalent expression using core or simpler derived nodes."""
 
 
@@ -196,10 +197,12 @@ class Equal(Expression):
 
 @dataclass(frozen=True, slots=True)
 class Not(Expression):
-    operand: Expression
+    operand: Expression | str
 
     def __post_init__(self) -> None:
-        _require_expression(self.operand, "Not operand")
+        object.__setattr__(
+            self, "operand", _coerce_expression(self.operand, "Not operand")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -213,7 +216,7 @@ class Not(Expression):
 class And(Expression):
     operands: tuple[Expression, ...]
 
-    def __init__(self, operands: Iterable[Expression]):
+    def __init__(self, operands: Iterable[Expression | str]):
         values = _expression_tuple(operands, "And operands")
         object.__setattr__(self, "operands", values)
 
@@ -229,7 +232,7 @@ class And(Expression):
 class Or(Expression):
     operands: tuple[Expression, ...]
 
-    def __init__(self, operands: Iterable[Expression]):
+    def __init__(self, operands: Iterable[Expression | str]):
         values = _expression_tuple(operands, "Or operands")
         object.__setattr__(self, "operands", values)
 
@@ -244,11 +247,13 @@ class Or(Expression):
 @dataclass(frozen=True, slots=True)
 class Restrict(Expression):
     interval: P.Interval | str
-    body: Expression
+    body: Expression | str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interval", _coerce_interval(self.interval))
-        _require_expression(self.body, "Restrict body")
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "Restrict body")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -261,11 +266,13 @@ class Restrict(Expression):
 @dataclass(frozen=True, slots=True)
 class Guard(Expression):
     interval: P.Interval | str
-    body: Expression
+    body: Expression | str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interval", _coerce_interval(self.interval))
-        _require_expression(self.body, "Guard body")
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "Guard body")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -278,11 +285,13 @@ class Guard(Expression):
 @dataclass(frozen=True, slots=True)
 class ForAll(Expression):
     interval: P.Interval | str
-    body: Expression
+    body: Expression | str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interval", _coerce_interval(self.interval))
-        _require_expression(self.body, "ForAll body")
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "ForAll body")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -295,11 +304,13 @@ class ForAll(Expression):
 @dataclass(frozen=True, slots=True)
 class Exists(Expression):
     interval: P.Interval | str
-    body: Expression
+    body: Expression | str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "interval", _coerce_interval(self.interval))
-        _require_expression(self.body, "Exists body")
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "Exists body")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -312,12 +323,19 @@ class Exists(Expression):
 CoreExpression = Bool | Atom | Equal | Not | And | Or | Restrict | Guard | ForAll | Exists
 
 
-def as_expr(value: Expression | bool) -> Expression:
+def as_expr(value: Expression | bool | str) -> Expression:
     if isinstance(value, Expression):
         return value
     if type(value) is bool:
         return Bool(value)
-    raise TypeError(f"expected Expression or bool, got {type(value).__name__}")
+    if isinstance(value, str):
+        from .parser import parse_expression
+
+        return parse_expression(value)
+    raise TypeError(
+        "expected Expression, expression string, or bool, "
+        f"got {type(value).__name__}"
+    )
 
 
 def as_term(value: Term | int) -> Term:
@@ -340,8 +358,10 @@ def term_key(term: Term) -> tuple[Any, ...]:
             raise TypeError(f"unsupported term type: {type(term).__name__}")
 
 
-def expression_key(expression: Expression) -> tuple[Any, ...]:
+def expression_key(expression: Expression | str) -> tuple[Any, ...]:
     """A deterministic ordering key for canonical commutative expressions."""
+
+    expression = _coerce_expression(expression, "expression")
 
     match expression:
         case Bool(value=value):
@@ -375,9 +395,14 @@ def expression_key(expression: Expression) -> tuple[Any, ...]:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
 
-def _require_expression(value: object, label: str) -> None:
-    if not isinstance(value, Expression):
-        raise TypeError(f"{label} must be an Expression")
+def _coerce_expression(value: Expression | str, label: str) -> Expression:
+    if isinstance(value, Expression):
+        return value
+    if isinstance(value, str):
+        from .parser import parse_expression
+
+        return parse_expression(value)
+    raise TypeError(f"{label} must be an Expression or expression string")
 
 
 def _require_name(value: object, label: str) -> None:
@@ -396,17 +421,17 @@ def _coerce_interval(value: P.Interval | str) -> P.Interval:
 
 
 def _expression_tuple(
-    values: Iterable[Expression], label: str
+    values: Iterable[Expression | str], label: str
 ) -> tuple[Expression, ...]:
     if isinstance(values, (str, bytes)):
-        raise TypeError(f"{label} must be an iterable of Expression objects")
+        raise TypeError(
+            f"{label} must be an iterable of Expression objects or strings"
+        )
     try:
         result = tuple(values)
     except TypeError as exc:
         raise TypeError(f"{label} must be iterable") from exc
-    for value in result:
-        _require_expression(value, label)
-    return result
+    return tuple(_coerce_expression(value, label) for value in result)
 
 
 def _interval_key(interval: P.Interval) -> tuple[Any, ...]:

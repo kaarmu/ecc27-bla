@@ -27,21 +27,20 @@ from .errors import (
     DerivedExpressionError,
     ExpansionLimitError,
     IntervalLogicError,
+    ParseError,
 )
 from .normalize import partition_intervals, to_nnf
+from .parser import parse, parse_expression
 from .pretty import format_expression, format_term
 from .semantics import NaturalSignal, SignalValuation, Valuation, denote, holds
 from .simplify import simplify
 from .transform import lower_derived
 from .visualize import Timeline, TimelineRow, timeline
 
-TOP = Bool(True)
-BOT = Bool(False)
 
 __all__ = [
     "And",
     "Atom",
-    "BOT",
     "Bool",
     "DerivedExpression",
     "DerivedExpressionCycleError",
@@ -59,10 +58,10 @@ __all__ = [
     "Natural",
     "NaturalSignal",
     "Or",
+    "ParseError",
     "Restrict",
     "Signal",
     "SignalValuation",
-    "TOP",
     "Term",
     "Valuation",
     "Xor",
@@ -77,6 +76,8 @@ __all__ = [
     "holds",
     "lower_derived",
     "partition_intervals",
+    "parse",
+    "parse_expression",
     "simplify",
     "to_nnf",
     "timeline",

@@ -18,15 +18,17 @@ from .ast import (
     Not,
     Or,
     Restrict,
+    _coerce_expression,
     expression_key,
 )
 from .transform import lower_derived
 
 
 
-def simplify(expression: Expression) -> Expression:
+def simplify(expression: Expression | str) -> Expression:
     """Return a compact equivalent expression using terminating local rules."""
 
+    expression = _coerce_expression(expression, "expression")
     current = lower_derived(expression)
     while True:
         rewritten = _simplify_once(current)

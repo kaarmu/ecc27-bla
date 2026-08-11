@@ -115,10 +115,6 @@ def natural_signal_from_points(values):
 
 
 class ConstructionTests(unittest.TestCase):
-    def test_boolean_constants_are_available_from_package_namespace(self):
-        self.assertEqual(il.TOP, il.Bool(True))
-        self.assertEqual(il.BOT, il.Bool(False))
-
     def test_nodes_are_structurally_equal_hashable_and_immutable(self):
         left = And((Atom("p"), Atom("q")))
         right = And((Atom("p"), Atom("q")))

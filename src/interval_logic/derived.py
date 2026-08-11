@@ -2,17 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .ast import And, DerivedExpression, Expression, Not, Or, _require_expression
+from .ast import And, DerivedExpression, Expression, Not, Or, _coerce_expression
 
 
 @dataclass(frozen=True, slots=True)
 class Implies(DerivedExpression):
-    left: Expression
-    right: Expression
+    left: Expression | str
+    right: Expression | str
 
     def __post_init__(self) -> None:
-        _require_expression(self.left, "Implies left operand")
-        _require_expression(self.right, "Implies right operand")
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "Implies left operand")
+        )
+        object.__setattr__(
+            self, "right", _coerce_expression(self.right, "Implies right operand")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -24,12 +28,18 @@ class Implies(DerivedExpression):
 
 @dataclass(frozen=True, slots=True)
 class Equivalent(DerivedExpression):
-    left: Expression
-    right: Expression
+    left: Expression | str
+    right: Expression | str
 
     def __post_init__(self) -> None:
-        _require_expression(self.left, "Equivalent left operand")
-        _require_expression(self.right, "Equivalent right operand")
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "Equivalent left operand")
+        )
+        object.__setattr__(
+            self,
+            "right",
+            _coerce_expression(self.right, "Equivalent right operand"),
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -46,12 +56,16 @@ class Equivalent(DerivedExpression):
 
 @dataclass(frozen=True, slots=True)
 class Xor(DerivedExpression):
-    left: Expression
-    right: Expression
+    left: Expression | str
+    right: Expression | str
 
     def __post_init__(self) -> None:
-        _require_expression(self.left, "Xor left operand")
-        _require_expression(self.right, "Xor right operand")
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "Xor left operand")
+        )
+        object.__setattr__(
+            self, "right", _coerce_expression(self.right, "Xor right operand")
+        )
 
     @property
     def children(self) -> tuple[Expression, ...]:

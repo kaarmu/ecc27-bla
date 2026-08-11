@@ -49,6 +49,37 @@ print(formula & available)  # (∀[8,10]: available) ∧ available
 Use `format_expression(formula, unicode=False)` for ASCII-only logs. `repr()`
 retains the full dataclass representation for debugging.
 
+The same notation can be parsed from either ASCII or Unicode. Operator
+precedence matches the formatter, and quoted names allow spaces and punctuation:
+
+```python
+from interval_logic import parse_expression
+
+formula = parse_expression(
+    "forall[8,10]: `vehicle connected` -> !fault"
+)
+assert str(formula) == "∀[8,10]: `vehicle connected` → ¬fault"
+assert parse_expression(str(formula)) == formula
+```
+
+The parser accepts `true`/`false`, `!`, `&`, `|`, `xor`, `->`, and `<->`, as
+well as their Unicode counterparts `⊤`/`⊥`, `¬`, `∧`, `∨`, `⊕`, `→`, and `↔`.
+It also parses signal equalities (`j = 1`, `j != 0`), quantifiers, and the
+restrict/guard forms emitted by the formatter. Invalid input raises
+`ParseError`, whose `position`, `line`, and `column` attributes locate the
+problem.
+
+Anywhere the public API expects an `Expression`, the same notation can be
+passed directly as a string. This includes expression constructors, derived
+operators, rewriting and normalization functions, evaluation, formatting, and
+timelines:
+
+```python
+formula = ForAll("[8,10]", "available & !fault")
+assert formula == parse_expression("forall[8,10]: available & !fault")
+assert simplify("available & true") == Atom("available")
+```
+
 In a notebook, `timeline(formula, valuation, universe)` displays an exact
 interval table and an inline SVG Gantt chart for the valuation and formula
 denotation. Its plain `str()` form provides the same interval data in terminals.

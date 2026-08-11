@@ -21,6 +21,7 @@ from .ast import (
     Restrict,
     Signal,
     Term,
+    _coerce_expression,
 )
 from .transform import lower_derived
 
@@ -86,7 +87,7 @@ SignalValuation = Mapping[str, NaturalSignal]
 
 
 def denote(
-    expression: Expression,
+    expression: Expression | str,
     valuation: Valuation,
     universe: P.Interval,
     *,
@@ -94,6 +95,7 @@ def denote(
 ) -> P.Interval:
     """Return the absolute times where an expression is true."""
 
+    expression = _coerce_expression(expression, "expression")
     if not isinstance(universe, P.Interval):
         raise TypeError("universe must be a portion.Interval")
     if not isinstance(valuation, Mapping):
@@ -106,7 +108,7 @@ def denote(
 
 
 def holds(
-    expression: Expression,
+    expression: Expression | str,
     valuation: Valuation,
     at: Any,
     universe: P.Interval,

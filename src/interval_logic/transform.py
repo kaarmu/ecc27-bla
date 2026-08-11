@@ -15,18 +15,18 @@ from .ast import (
     Not,
     Or,
     Restrict,
+    _coerce_expression,
 )
-from .errors import DerivedExpressionCycleError, DerivedExpressionError
+from .errors import DerivedExpressionCycleError, DerivedExpressionError, ParseError
 
 
 def replace(
-    expression: Expression,
-    fn: Callable[[Expression], Expression],
+    expression: Expression | str,
+    fn: Callable[[Expression], Expression | str],
 ) -> Expression:
     """Replace expression nodes bottom-up using ``fn``."""
 
-    if not isinstance(expression, Expression):
-        raise TypeError("expression must be an Expression")
+    expression = _coerce_expression(expression, "expression")
     if not callable(fn):
         raise TypeError("replacement function must be callable")
     return _replace(expression, fn)
@@ -34,7 +34,7 @@ def replace(
 
 def _replace(
     expression: Expression,
-    fn: Callable[[Expression], Expression],
+    fn: Callable[[Expression], Expression | str],
 ) -> Expression:
     children = expression.children
     replaced_children = tuple(_replace(child, fn) for child in children)
@@ -52,6 +52,8 @@ def _replace(
         candidate = expression
 
     result = fn(candidate)
+    if isinstance(result, str):
+        result = _coerce_expression(result, "replacement function result")
     if not isinstance(result, Expression):
         raise TypeError(
             "replacement function must return an Expression, "
@@ -60,9 +62,8 @@ def _replace(
     return result
 
 
-def lower_derived(expression: Expression) -> Expression:
-    if not isinstance(expression, Expression):
-        raise TypeError("expression must be an Expression")
+def lower_derived(expression: Expression | str) -> Expression:
+    expression = _coerce_expression(expression, "expression")
     return _lower(expression, set(), 0)
 
 
@@ -80,10 +81,15 @@ def _lower(expression: Expression, active: set[int], derived_depth: int) -> Expr
         active.add(identity)
         try:
             lowered = expression.lower()
-            if not isinstance(lowered, Expression):
-                raise DerivedExpressionError(
-                    f"{type(expression).__name__}.lower() must return an Expression"
+            try:
+                lowered = _coerce_expression(
+                    lowered, f"{type(expression).__name__}.lower() result"
                 )
+            except (ParseError, TypeError) as error:
+                raise DerivedExpressionError(
+                    f"{type(expression).__name__}.lower() must return an "
+                    "Expression or expression string"
+                ) from error
             return _lower(lowered, active, derived_depth + 1)
         finally:
             active.remove(identity)

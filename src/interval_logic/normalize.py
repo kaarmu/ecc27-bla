@@ -14,6 +14,7 @@ from .ast import (
     Not,
     Or,
     Restrict,
+    _coerce_expression,
     expression_key,
 )
 from .errors import ExpansionLimitError
@@ -21,14 +22,15 @@ from .simplify import simplify
 from .transform import lower_derived
 
 
-def to_nnf(expression: Expression) -> Expression:
+def to_nnf(expression: Expression | str) -> Expression:
     """Lower derived operators and push negations down to atomic formulas."""
 
+    expression = _coerce_expression(expression, "expression")
     return simplify(_push_negation(lower_derived(expression), negated=False))
 
 
 def partition_intervals(
-    expression: Expression, *, max_nodes: int = 10_000
+    expression: Expression | str, *, max_nodes: int = 10_000
 ) -> Expression:
     """Rewrite quantifiers over a shared disjoint interval partition."""
 

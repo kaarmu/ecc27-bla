@@ -8,7 +8,7 @@ from typing import Any
 
 import portion as P
 
-from .ast import Expression
+from .ast import Expression, _coerce_expression
 from .semantics import NaturalSignal, SignalValuation, Valuation, denote
 
 
@@ -25,10 +25,15 @@ class TimelineRow:
 class Timeline:
     """Terminal and notebook representation of a formula and its valuation."""
 
-    expression: Expression
+    expression: Expression | str
     universe: P.Interval
     rows: tuple[TimelineRow, ...]
     width: int = 900
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "expression", _coerce_expression(self.expression, "expression")
+        )
 
     def __str__(self) -> str:
         label_width = max(len(row.label) for row in self.rows)
@@ -59,7 +64,7 @@ class Timeline:
 
 
 def timeline(
-    expression: Expression,
+    expression: Expression | str,
     valuation: Valuation,
     universe: P.Interval,
     *,
@@ -69,8 +74,7 @@ def timeline(
 ) -> Timeline:
     """Build an exact timeline for atom, signal, and formula denotations."""
 
-    if not isinstance(expression, Expression):
-        raise TypeError("expression must be an Expression")
+    expression = _coerce_expression(expression, "expression")
     if not isinstance(universe, P.Interval):
         raise TypeError("universe must be a portion.Interval")
     if type(width) is not int or width < 320:

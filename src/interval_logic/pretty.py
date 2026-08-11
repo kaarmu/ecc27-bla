@@ -18,6 +18,7 @@ from .ast import (
     Restrict,
     Signal,
     Term,
+    _coerce_expression,
 )
 from .derived import Equivalent, Implies, Xor
 
@@ -66,11 +67,10 @@ _NOT = 70
 _ATOM = 80
 
 
-def format_expression(expression: Expression, *, unicode: bool = True) -> str:
+def format_expression(expression: Expression | str, *, unicode: bool = True) -> str:
     """Format a formula with precedence-aware mathematical notation."""
 
-    if not isinstance(expression, Expression):
-        raise TypeError("expression must be an Expression")
+    expression = _coerce_expression(expression, "expression")
     symbols = _UNICODE if unicode else _ASCII
     return _format(expression, symbols, parent_precedence=0)
 
@@ -176,7 +176,7 @@ def _precedence(expression: Expression) -> int:
 
 
 def _format_atom(name: str) -> str:
-    if name.isidentifier():
+    if name.isidentifier() and name not in {"true", "false", "forall", "exists"}:
         return name
     escaped = name.replace("\\", "\\\\").replace("`", "\\`")
     return f"`{escaped}`"
