@@ -167,12 +167,54 @@ def _with_children(self, children):
     return type(self)(self.label, *children)
 ```
 
-Use `simplify()` for compact, size-nonincreasing rewrites after derived operators
-are lowered, `to_nnf()` to push negations to atoms, and
-`partition_intervals()` when a shared disjoint interval partition is required.
-The partitioner accepts a `max_nodes` budget because it may expand a formula.
-NNF swaps `Restrict` and `Guard` under negation, preserving the guarantee that
-negations only wrap propositions or equalities.
+Use `simplify()` to lower derived operators, push negations to atoms, recognize
+Boolean and quantified complements, and apply compact Boolean and interval
+rewrites. Negation normalization can grow a formula slightly; speculative
+distribution and interval decomposition are kept only when the final result is
+smaller. `max_nodes` bounds those speculative candidates, which are skipped if
+they exceed the budget.
+
+Quantifier implication depends on the evaluation universe. Pass it explicitly
+to enable those contextual rules and effective-window reductions:
+
+```python
+p = Atom("p")
+left = P.closed(0, 1)
+right = P.closed(1, 2)
+universe = P.closed(0, 2)
+
+formula = ForAll(left, p) | Exists(right, p)
+assert simplify(formula) == formula  # conservative for every universe
+assert simplify(formula, universe=universe) == Exists(right, p)
+assert formula.simplify(universe=universe, max_nodes=1_000) == Exists(right, p)
+```
+
+A result simplified with `universe=...` is equivalent relative to that universe.
+Known domain equivalences remain explicit replacements; a two-pass workflow lets
+the replacement expose further cancellations:
+
+```python
+from interval_logic import Bool, Signal
+
+job_one = Signal("j").equals(1)
+q = Atom("q")
+formula_with_known_equivalence = ForAll(left, job_one) | Exists(left, ~q)
+
+def domain_rewrite(expression):
+    return q if expression == job_one else expression
+
+partly_simplified = simplify(formula_with_known_equivalence)
+substituted = partly_simplified.replace(domain_rewrite)
+final = simplify(substituted, universe=universe)
+assert final == Bool(True)
+```
+
+Use `to_nnf()` when only an explicit negation-normal result is needed, and
+`partition_intervals()` when a shared disjoint interval partition must be
+retained even if it is larger. The partitioner raises `ExpansionLimitError`
+when its `max_nodes` budget is exceeded. NNF swaps `Restrict` and `Guard` under
+negation, preserving the guarantee that negations only wrap propositions or
+equalities.
 
 Examples are available in
 [`notebooks/interval_logic_examples.ipynb`](notebooks/interval_logic_examples.ipynb).

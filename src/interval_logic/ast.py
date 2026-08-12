@@ -25,10 +25,15 @@ class Expression(ABC):
     def node_count(self) -> int:
         return 1 + sum(child.node_count for child in self.children)
 
-    def simplify(self) -> Expression:
+    def simplify(
+        self,
+        *,
+        universe: P.Interval | None = None,
+        max_nodes: int = 10_000,
+    ) -> Expression:
         from .simplify import simplify
 
-        return simplify(self)
+        return simplify(self, universe=universe, max_nodes=max_nodes)
 
     def replace(self, fn: Callable[[Expression], Expression | str], *fns: Callable[[Expression], Expression | str]) -> Expression:
         """Replace subexpressions bottom-up using ``fn``."""

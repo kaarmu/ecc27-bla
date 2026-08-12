@@ -798,6 +798,82 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(And((p, Or((p, q))))), p)
         self.assertEqual(simplify(Or((p, And((p, q))))), p)
 
+    def test_negations_are_normalized_before_boolean_simplification(self):
+        p, q = Atom("p"), Atom("q")
+        interval = P.closed(0, 1)
+
+        self.assertEqual(
+            simplify(Not(Or((p, q)))),
+            And((Not(p), Not(q))),
+        )
+        self.assertEqual(
+            simplify(Not(And((p, q)))),
+            Or((Not(p), Not(q))),
+        )
+        self.assertEqual(
+            simplify(Not(ForAll(interval, And((p, q))))),
+            Exists(interval, Or((Not(p), Not(q)))),
+        )
+        self.assertEqual(
+            simplify(Not(Exists(interval, Or((p, q))))),
+            ForAll(interval, And((Not(p), Not(q)))),
+        )
+
+    def test_quantified_duals_are_recognized_as_boolean_complements(self):
+        p, q = Atom("p"), Atom("q")
+        body = And((p, q))
+        negated_body = Or((Not(p), Not(q)))
+        intervals = (
+            P.empty(),
+            P.closed(0, 1),
+            P.closed(-1, 0) | P.openclosed(1, 2),
+        )
+
+        for interval in intervals:
+            with self.subTest(interval=interval):
+                self.assertEqual(
+                    simplify(
+                        Or((ForAll(interval, body), Exists(interval, negated_body)))
+                    ),
+                    Bool(True),
+                )
+                self.assertEqual(
+                    simplify(
+                        And((ForAll(interval, body), Exists(interval, negated_body)))
+                    ),
+                    Bool(False),
+                )
+                self.assertEqual(
+                    simplify(
+                        Or((Exists(interval, body), ForAll(interval, negated_body)))
+                    ),
+                    Bool(True),
+                )
+                self.assertEqual(
+                    simplify(
+                        And((Exists(interval, body), ForAll(interval, negated_body)))
+                    ),
+                    Bool(False),
+                )
+
+    def test_subset_absorption_factoring_and_distributive_cancellation(self):
+        p, q, r = Atom("p"), Atom("q"), Atom("r")
+
+        self.assertEqual(
+            simplify(Or((And((p, q)), And((p, q, r))))),
+            And((p, q)),
+        )
+        self.assertEqual(
+            simplify(Or((And((p, q)), And((p, Not(q)))))),
+            p,
+        )
+        self.assertEqual(
+            simplify(And((Or((p, q)), Or((p, Not(q)))))),
+            p,
+        )
+        self.assertEqual(simplify(Or((p, And((Not(p), q))))), Or((p, q)))
+        self.assertEqual(simplify(And((p, Or((Not(p), q))))), And((p, q)))
+
     def test_equality_constants_reflexivity_and_complements(self):
         j = Signal("j")
         equality = j.equals(7)
@@ -830,6 +906,136 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(existential), existential)
         self.assertEqual(denote(universal, {}, UNIVERSE), UNIVERSE)
         self.assertEqual(denote(existential, {}, UNIVERSE), P.empty())
+
+    def test_universe_context_enables_safe_quantifier_implication(self):
+        p = Atom("p")
+        left = P.closed(0, 1)
+        touching = P.closed(1, 2)
+        disjoint = P.open(1, 2)
+        universe = P.closed(0, 2)
+
+        disjunction = Or((ForAll(left, p), Exists(touching, p)))
+        conjunction = And((ForAll(left, p), Exists(touching, p)))
+        no_overlap = Or((ForAll(left, p), Exists(disjoint, p)))
+
+        self.assertEqual(simplify(disjunction), disjunction)
+        self.assertEqual(simplify(disjunction, universe=universe), Exists(touching, p))
+        self.assertEqual(simplify(conjunction, universe=universe), ForAll(left, p))
+        self.assertEqual(simplify(no_overlap, universe=universe), no_overlap)
+
+        for valuation in all_valuations("p"):
+            portion_valuation = {"p": portion_from_points(valuation["p"])}
+            for formula in (disjunction, conjunction, no_overlap):
+                with self.subTest(formula=formula, valuation=valuation):
+                    self.assertEqual(
+                        denote(formula, portion_valuation, universe),
+                        denote(
+                            simplify(formula, universe=universe),
+                            portion_valuation,
+                            universe,
+                        ),
+                    )
+
+    def test_universe_context_simplifies_effective_windows_and_constants(self):
+        p = Atom("p")
+        interval = P.closed(0, 1)
+        inside = P.closed(0, 1)
+        outside = P.closed(2, 3)
+
+        self.assertEqual(simplify(Restrict(interval, p), universe=inside), p)
+        self.assertEqual(simplify(Guard(interval, p), universe=inside), p)
+        self.assertEqual(
+            simplify(Restrict(interval, p), universe=outside), Bool(False)
+        )
+        self.assertEqual(simplify(Guard(interval, p), universe=outside), Bool(True))
+        self.assertEqual(
+            simplify(ForAll(interval, Bool(False)), universe=inside), Bool(False)
+        )
+        self.assertEqual(
+            simplify(ForAll(interval, Bool(False)), universe=outside), Bool(True)
+        )
+        self.assertEqual(
+            simplify(Exists(interval, Bool(True)), universe=inside), Bool(True)
+        )
+        self.assertEqual(
+            simplify(Exists(interval, Bool(True)), universe=outside), Bool(False)
+        )
+
+    def test_interval_decomposition_is_bounded_and_kept_only_when_smaller(self):
+        p = Atom("p")
+        whole = P.closed(0, 2)
+        part = P.closed(0, 1)
+        contradiction = And((ForAll(whole, p), Exists(part, Not(p))))
+        disconnected = P.closed(-1, 0) | P.openclosed(1, 2)
+
+        self.assertEqual(simplify(contradiction), Bool(False))
+        self.assertEqual(simplify(contradiction, max_nodes=2), contradiction)
+        self.assertEqual(
+            simplify(Exists(disconnected, p)),
+            Exists(disconnected, p),
+        )
+
+    def test_known_equivalence_can_be_substituted_between_simplification_passes(self):
+        q = Atom("q")
+        equality = Signal("j").equals(1)
+        interval = P.closed(0, 1)
+        formula = Or((ForAll(interval, equality), Exists(interval, Not(q))))
+
+        rewritten = simplify(formula).replace(
+            lambda expression: q if expression == equality else expression
+        )
+
+        self.assertEqual(simplify(rewritten), Bool(True))
+
+    def test_simplification_context_and_budget_are_validated_and_forwarded(self):
+        p = Atom("p")
+        interval = P.closed(0, 1)
+
+        self.assertEqual(
+            Restrict(interval, p).simplify(universe=interval),
+            p,
+        )
+        with self.assertRaisesRegex(TypeError, "portion.Interval"):
+            simplify(p, universe="[0,1]")
+        for invalid in (True, 0, -1, 1.5):
+            with self.subTest(max_nodes=invalid):
+                with self.assertRaisesRegex(ValueError, "positive integer"):
+                    simplify(p, max_nodes=invalid)
+
+    def test_contextual_simplification_preserves_semantics_across_universes(self):
+        p, q = Atom("p"), Atom("q")
+        formulas = (
+            Not(And((p, q))),
+            Or((ForAll(P.closed(-1, 0), p), Exists(P.closed(0, 1), p))),
+            And(
+                (
+                    ForAll(P.closed(-1, 1), p),
+                    Exists(P.closed(-1, 0), Not(p)),
+                )
+            ),
+            Restrict(P.closed(-1, 0), p),
+            Guard(P.closed(0, 1), q),
+        )
+        universes = (P.empty(), P.singleton(0), UNIVERSE, P.closed(2, 3))
+
+        for universe in universes:
+            for formula in formulas:
+                result = simplify(formula, universe=universe)
+                self.assertEqual(simplify(result, universe=universe), result)
+                for valuation in all_valuations("p", "q"):
+                    portion_valuation = {
+                        name: portion_from_points(values)
+                        for name, values in valuation.items()
+                    }
+                    with self.subTest(
+                        universe=universe,
+                        formula=formula,
+                        valuation=valuation,
+                    ):
+                        self.assertEqual(
+                            denote(formula, portion_valuation, universe),
+                            denote(result, portion_valuation, universe),
+                        )
 
     def test_equal_interval_quantifiers_combine_bodies(self):
         p, q = Atom("p"), Atom("q")
@@ -1120,7 +1326,7 @@ class DerivedOperatorTests(unittest.TestCase):
         p, q = Atom("p"), Atom("q")
         expression = Nand(p, q)
 
-        self.assertEqual(simplify(expression), Not(And((p, q))))
+        self.assertEqual(simplify(expression), Or((Not(p), Not(q))))
         self.assertFalse(
             holds(expression, {"p": UNIVERSE, "q": UNIVERSE}, 0, UNIVERSE)
         )

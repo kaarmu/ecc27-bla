@@ -67,6 +67,38 @@ def lower_derived(expression: Expression | str) -> Expression:
     return _lower(expression, set(), 0)
 
 
+def _push_negation(expression: Expression, negated: bool = False) -> Expression:
+    """Return ``expression`` in negation normal form without simplifying it."""
+
+    match expression:
+        case Bool(value=value):
+            return Bool(not value if negated else value)
+        case Atom() | Equal():
+            return Not(expression) if negated else expression
+        case Not(operand=operand):
+            return _push_negation(operand, not negated)
+        case And(operands=operands):
+            operator = Or if negated else And
+            return operator(_push_negation(item, negated) for item in operands)
+        case Or(operands=operands):
+            operator = And if negated else Or
+            return operator(_push_negation(item, negated) for item in operands)
+        case Restrict(interval=interval, body=body):
+            operator = Guard if negated else Restrict
+            return operator(interval, _push_negation(body, negated))
+        case Guard(interval=interval, body=body):
+            operator = Restrict if negated else Guard
+            return operator(interval, _push_negation(body, negated))
+        case ForAll(interval=interval, body=body):
+            operator = Exists if negated else ForAll
+            return operator(interval, _push_negation(body, negated))
+        case Exists(interval=interval, body=body):
+            operator = ForAll if negated else Exists
+            return operator(interval, _push_negation(body, negated))
+        case _:
+            raise TypeError(f"unsupported expression type: {type(expression).__name__}")
+
+
 def _lower(expression: Expression, active: set[int], derived_depth: int) -> Expression:
     if isinstance(expression, DerivedExpression):
         if derived_depth >= 256:

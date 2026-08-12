@@ -19,7 +19,7 @@ from .ast import (
 )
 from .errors import ExpansionLimitError
 from .simplify import simplify
-from .transform import lower_derived
+from .transform import _push_negation, lower_derived
 
 
 def to_nnf(expression: Expression | str) -> Expression:
@@ -40,36 +40,6 @@ def partition_intervals(
     _check_budget(normalized, max_nodes)
     cells = _partition(_collect_intervals(normalized))
     return _rewrite_quantifiers(normalized, cells, max_nodes)
-
-
-def _push_negation(expression: Expression, negated: bool) -> Expression:
-    match expression:
-        case Bool(value=value):
-            return Bool(not value if negated else value)
-        case Atom() | Equal():
-            return Not(expression) if negated else expression
-        case Not(operand=operand):
-            return _push_negation(operand, not negated)
-        case And(operands=operands):
-            operator = Or if negated else And
-            return operator(_push_negation(item, negated) for item in operands)
-        case Or(operands=operands):
-            operator = And if negated else Or
-            return operator(_push_negation(item, negated) for item in operands)
-        case Restrict(interval=interval, body=body):
-            operator = Guard if negated else Restrict
-            return operator(interval, _push_negation(body, negated))
-        case Guard(interval=interval, body=body):
-            operator = Restrict if negated else Guard
-            return operator(interval, _push_negation(body, negated))
-        case ForAll(interval=interval, body=body):
-            operator = Exists if negated else ForAll
-            return operator(interval, _push_negation(body, negated))
-        case Exists(interval=interval, body=body):
-            operator = ForAll if negated else Exists
-            return operator(interval, _push_negation(body, negated))
-        case _:
-            raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
 
 def _collect_intervals(expression: Expression) -> list[P.Interval]:
