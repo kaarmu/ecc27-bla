@@ -14,6 +14,7 @@ from .ast import (
     Expression,
     ForAll,
     Guard,
+    Hold,
     Natural,
     Not,
     Or,
@@ -204,6 +205,18 @@ def _simplify_once(
             if isinstance(child, Restrict):
                 return Exists(interval & child.interval, child.body)
             return Exists(interval, child)
+        case Hold(delta=delta, body=body):
+            child = _simplify_once(
+                body,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if delta == 0 or child == Bool(True):
+                return Bool(True)
+            if child == Bool(False):
+                return child
+            return Hold(delta, child)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -297,6 +310,8 @@ def _negate_nnf(expression: Expression) -> Expression:
             return Exists(interval, _negate_nnf(body))
         case Exists(interval=interval, body=body):
             return ForAll(interval, _negate_nnf(body))
+        case Hold():
+            return Not(expression)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 

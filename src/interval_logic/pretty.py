@@ -12,6 +12,7 @@ from .ast import (
     Expression,
     ForAll,
     Guard,
+    Hold,
     Natural,
     Not,
     Or,
@@ -126,6 +127,8 @@ def _format(
             text = f"{symbols.forall}{interval}: {_format(body, symbols, 0)}"
         case Exists(interval=interval, body=body):
             text = f"{symbols.exists}{interval}: {_format(body, symbols, 0)}"
+        case Hold(delta=delta, body=body):
+            text = f"H^{_format_delta(delta)} {_format(body, symbols, _NOT)}"
         case Implies(left=left, right=right):
             text = (
                 _format(left, symbols, _IMPLIES + 1)
@@ -167,7 +170,7 @@ def _precedence(expression: Expression) -> int:
             return _OR
         case And():
             return _AND
-        case Not():
+        case Not() | Hold():
             return _NOT
         case Bool() | Atom() | Equal() | Restrict() | Guard() | DerivedExpression():
             return _ATOM
@@ -180,3 +183,8 @@ def _format_atom(name: str) -> str:
         return name
     escaped = name.replace("\\", "\\\\").replace("`", "\\`")
     return f"`{escaped}`"
+
+
+def _format_delta(delta: float) -> str:
+    text = repr(delta)
+    return text[:-2] if text.endswith(".0") else text

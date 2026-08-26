@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import isfinite
+from numbers import Real
 from typing import Any, Iterable
 
 import portion as P
@@ -84,6 +86,9 @@ class Expression(ABC):
     
     def exists(self, interval: P.Interval) -> Expression:
         return Exists(interval, self)
+
+    def hold(self, delta: Real) -> Expression:
+        return Hold(delta, self)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
         """Rebuild this node with replacement children.
@@ -325,7 +330,37 @@ class Exists(Expression):
         return Exists(self.interval, children[0])
 
 
-CoreExpression = Bool | Atom | Equal | Not | And | Or | Restrict | Guard | ForAll | Exists
+@dataclass(frozen=True, slots=True)
+class Hold(Expression):
+    """Require ``body`` throughout the half-open window ``[now, now + delta)``."""
+
+    delta: float
+    body: Expression | str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.delta, bool) or not isinstance(self.delta, Real):
+            raise TypeError("Hold delta must be a real number")
+        delta = float(self.delta)
+        if not isfinite(delta):
+            raise ValueError("Hold delta must be finite")
+        if delta < 0:
+            raise ValueError("Hold delta must be non-negative")
+        if delta == 0:
+            delta = 0.0
+        object.__setattr__(self, "delta", delta)
+        object.__setattr__(self, "body", _coerce_expression(self.body, "Hold body"))
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.body,)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Hold(self.delta, children[0])
+
+
+CoreExpression = (
+    Bool | Atom | Equal | Not | And | Or | Restrict | Guard | ForAll | Exists | Hold
+)
 
 
 def as_expr(value: Expression | bool | str) -> Expression:
@@ -389,9 +424,11 @@ def expression_key(expression: Expression | str) -> tuple[Any, ...]:
             return (8, _interval_key(interval), expression_key(body))
         case Exists(interval=interval, body=body):
             return (9, _interval_key(interval), expression_key(body))
+        case Hold(delta=delta, body=body):
+            return (10, delta, expression_key(body))
         case DerivedExpression():
             return (
-                10,
+                11,
                 type(expression).__module__,
                 type(expression).__qualname__,
                 repr(expression),

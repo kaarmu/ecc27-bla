@@ -11,6 +11,7 @@ from .ast import (
     Expression,
     ForAll,
     Guard,
+    Hold,
     Not,
     Or,
     Restrict,
@@ -23,7 +24,11 @@ from .transform import _push_negation, lower_derived
 
 
 def to_nnf(expression: Expression | str) -> Expression:
-    """Lower derived operators and push negations down to atomic formulas."""
+    """Lower derived operators and push negations through operators with duals.
+
+    A negated :class:`Hold` remains wrapped in ``Not`` because the language has
+    no existential "within" operator that could express its temporal dual.
+    """
 
     expression = _coerce_expression(expression, "expression")
     return simplify(_push_negation(lower_derived(expression), negated=False))
@@ -101,6 +106,8 @@ def _rewrite_quantifiers(
             child = _rewrite_quantifiers(body, cells, max_nodes)
             pieces = [Exists(cell, child) for cell in cells if (cell - interval).empty]
             result = _canonical_variadic(Or, pieces, empty=Bool(False))
+        case Hold(delta=delta, body=body):
+            result = Hold(delta, _rewrite_quantifiers(body, cells, max_nodes))
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
     _check_budget(result, max_nodes)

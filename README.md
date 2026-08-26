@@ -39,6 +39,26 @@ assert str(restricted) == "[8,10]_(available)"
 assert str(guarded) == "[8,10]^(available)"
 ```
 
+`Hold(delta, formula)` requires a formula to remain true throughout the
+half-open interval `[t, t + delta)`, where `t` is the current time. It can also
+be constructed with `formula.hold(delta)` or parsed using `H^delta formula`:
+
+```python
+from interval_logic import Hold
+
+stable = Hold(2, available)
+assert stable == available.hold(2)
+assert stable == parse_expression("H^2 available")
+assert str(stable) == "H^2 available"
+```
+
+Hold durations are finite, non-negative real numbers, and `Hold(0, formula)` is
+vacuously true. Like every interval operator, a hold window is clipped to the
+evaluation universe. When the relevant intervals are contained in that
+universe, hold satisfies
+`ForAll([a,b], Hold(delta, phi)) == ForAll([a,b+delta), phi)` semantically for
+positive `delta`.
+
 Formulas use mathematical notation with precedence-aware parentheses when
 converted to strings:
 
@@ -213,8 +233,8 @@ Use `to_nnf()` when only an explicit negation-normal result is needed, and
 `partition_intervals()` when a shared disjoint interval partition must be
 retained even if it is larger. The partitioner raises `ExpansionLimitError`
 when its `max_nodes` budget is exceeded. NNF swaps `Restrict` and `Guard` under
-negation, preserving the guarantee that negations only wrap propositions or
-equalities.
+negation. Because the language has no existential temporal dual for `Hold`, a
+negated hold remains represented as `Not(Hold(...))`.
 
 Examples are available in
 [`notebooks/interval_logic_examples.ipynb`](notebooks/interval_logic_examples.ipynb).

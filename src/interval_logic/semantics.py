@@ -15,6 +15,7 @@ from .ast import (
     Expression,
     ForAll,
     Guard,
+    Hold,
     Natural,
     Not,
     Or,
@@ -176,8 +177,28 @@ def _denote(
                 return P.empty()
             truth = _denote(body, valuation, signals, universe)
             return universe if not (quantified & truth).empty else P.empty()
+        case Hold(delta=delta, body=body):
+            truth = _denote(body, valuation, signals, universe)
+            return _hold_denotation(truth, universe, delta)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
+
+
+def _hold_denotation(
+    truth: P.Interval,
+    universe: P.Interval,
+    delta: float,
+) -> P.Interval:
+    """Return times whose half-open forward window contains no false time."""
+
+    if delta == 0:
+        return universe
+
+    violations = P.empty()
+    for atom in universe - truth:
+        lower = atom.lower if atom.lower == -P.inf else atom.lower - delta
+        violations |= P.from_data([(P.OPEN, lower, atom.upper, atom.right)])
+    return universe - violations
 
 
 def _equal_denotation(

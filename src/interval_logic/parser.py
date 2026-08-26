@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import isfinite
+
 import portion as P
 
 from .ast import (
@@ -11,6 +13,7 @@ from .ast import (
     Expression,
     ForAll,
     Guard,
+    Hold,
     Natural,
     Not,
     Or,
@@ -123,7 +126,48 @@ class _Parser:
     def _parse_unary(self) -> Expression:
         if self._match_operator("¬", "!"):
             return Not(self._parse_unary())
+        hold = self._try_parse_hold()
+        if hold is not None:
+            return hold
         return self._parse_primary()
+
+    def _try_parse_hold(self) -> Expression | None:
+        self._skip_whitespace()
+        start = self.position
+        if not self._match_symbol("H"):
+            return None
+        if not self._match_symbol("^"):
+            self.position = start
+            return None
+
+        self._skip_whitespace()
+        delta_start = self.position
+        if not self._at_end and self.source[self.position] in "+-":
+            self.position += 1
+        integer_digits = self._consume_ascii_digits()
+        fractional_digits = False
+        if not self._at_end and self.source[self.position] == ".":
+            self.position += 1
+            fractional_digits = self._consume_ascii_digits()
+        if not integer_digits and not fractional_digits:
+            self._fail("expected a non-negative real duration after 'H^'", delta_start)
+        if not self._at_end and self.source[self.position] in "eE":
+            exponent_start = self.position
+            self.position += 1
+            if not self._at_end and self.source[self.position] in "+-":
+                self.position += 1
+            if not self._consume_ascii_digits():
+                self._fail("invalid exponent in hold duration", exponent_start)
+
+        text = self.source[delta_start:self.position]
+        try:
+            delta = float(text)
+        except ValueError as error:
+            self._fail(f"invalid hold duration {text!r}", delta_start)
+            raise AssertionError("unreachable") from error
+        if not isfinite(delta) or delta < 0:
+            self._fail(f"invalid hold duration {text!r}", delta_start)
+        return Hold(delta, self._parse_unary())
 
     def _parse_primary(self) -> Expression:
         self._skip_whitespace()
@@ -342,6 +386,12 @@ class _Parser:
     @staticmethod
     def _is_ascii_digit(character: str) -> bool:
         return "0" <= character <= "9"
+
+    def _consume_ascii_digits(self) -> bool:
+        start = self.position
+        while not self._at_end and self._is_ascii_digit(self.source[self.position]):
+            self.position += 1
+        return self.position > start
 
     @property
     def _at_end(self) -> bool:
