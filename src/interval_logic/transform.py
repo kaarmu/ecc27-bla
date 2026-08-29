@@ -8,6 +8,7 @@ from .ast import (
     Bool,
     DerivedExpression,
     Equal,
+    Eventually,
     Exists,
     Expression,
     ForAll,
@@ -99,6 +100,9 @@ def _push_negation(expression: Expression, negated: bool = False) -> Expression:
         case Hold(delta=delta, body=body):
             result = Hold(delta, _push_negation(body, False))
             return Not(result) if negated else result
+        case Eventually(delta=delta, body=body):
+            result = Eventually(delta, _push_negation(body, False))
+            return Not(result) if negated else result
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -149,5 +153,7 @@ def _lower(expression: Expression, active: set[int], derived_depth: int) -> Expr
             return Exists(interval, _lower(body, active, derived_depth))
         case Hold(delta=delta, body=body):
             return Hold(delta, _lower(body, active, derived_depth))
+        case Eventually(delta=delta, body=body):
+            return Eventually(delta, _lower(body, active, derived_depth))
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")

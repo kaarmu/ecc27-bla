@@ -7,6 +7,7 @@ from .ast import (
     Atom,
     Bool,
     Equal,
+    Eventually,
     Exists,
     Expression,
     ForAll,
@@ -26,8 +27,8 @@ from .transform import _push_negation, lower_derived
 def to_nnf(expression: Expression | str) -> Expression:
     """Lower derived operators and push negations through operators with duals.
 
-    A negated :class:`Hold` remains wrapped in ``Not`` because the language has
-    no existential "within" operator that could express its temporal dual.
+    Negated temporal operators remain wrapped in ``Not`` because their Boolean
+    duality is conditional near a finite evaluation-universe boundary.
     """
 
     expression = _coerce_expression(expression, "expression")
@@ -108,6 +109,10 @@ def _rewrite_quantifiers(
             result = _canonical_variadic(Or, pieces, empty=Bool(False))
         case Hold(delta=delta, body=body):
             result = Hold(delta, _rewrite_quantifiers(body, cells, max_nodes))
+        case Eventually(delta=delta, body=body):
+            result = Eventually(
+                delta, _rewrite_quantifiers(body, cells, max_nodes)
+            )
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
     _check_budget(result, max_nodes)

@@ -9,6 +9,7 @@ from .ast import (
     Atom,
     Bool,
     Equal,
+    Eventually,
     Exists,
     Expression,
     ForAll,
@@ -126,15 +127,23 @@ class _Parser:
     def _parse_unary(self) -> Expression:
         if self._match_operator("¬", "!"):
             return Not(self._parse_unary())
-        hold = self._try_parse_hold()
-        if hold is not None:
-            return hold
+        temporal = self._try_parse_temporal()
+        if temporal is not None:
+            return temporal
         return self._parse_primary()
 
-    def _try_parse_hold(self) -> Expression | None:
+    def _try_parse_temporal(self) -> Expression | None:
         self._skip_whitespace()
         start = self.position
-        if not self._match_symbol("H"):
+        if self._match_symbol("H"):
+            operator = Hold
+            name = "hold"
+            notation = "H^"
+        elif self._match_symbol("F"):
+            operator = Eventually
+            name = "eventually"
+            notation = "F^"
+        else:
             return None
         if not self._match_symbol("^"):
             self.position = start
@@ -150,24 +159,27 @@ class _Parser:
             self.position += 1
             fractional_digits = self._consume_ascii_digits()
         if not integer_digits and not fractional_digits:
-            self._fail("expected a non-negative real duration after 'H^'", delta_start)
+            self._fail(
+                f"expected a non-negative real duration after '{notation}'",
+                delta_start,
+            )
         if not self._at_end and self.source[self.position] in "eE":
             exponent_start = self.position
             self.position += 1
             if not self._at_end and self.source[self.position] in "+-":
                 self.position += 1
             if not self._consume_ascii_digits():
-                self._fail("invalid exponent in hold duration", exponent_start)
+                self._fail(f"invalid exponent in {name} duration", exponent_start)
 
         text = self.source[delta_start:self.position]
         try:
             delta = float(text)
         except ValueError as error:
-            self._fail(f"invalid hold duration {text!r}", delta_start)
+            self._fail(f"invalid {name} duration {text!r}", delta_start)
             raise AssertionError("unreachable") from error
         if not isfinite(delta) or delta < 0:
-            self._fail(f"invalid hold duration {text!r}", delta_start)
-        return Hold(delta, self._parse_unary())
+            self._fail(f"invalid {name} duration {text!r}", delta_start)
+        return operator(delta, self._parse_unary())
 
     def _parse_primary(self) -> Expression:
         self._skip_whitespace()

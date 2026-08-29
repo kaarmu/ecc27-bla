@@ -3,7 +3,8 @@
 `interval_logic` provides immutable formulas over absolute time intervals. Atom
 valuations and the evaluation universe are represented by `portion.Interval`
 objects. Supplied valuations and all interval operators are clipped to that
-universe during evaluation.
+universe during evaluation, except that `Hold` conservatively rejects a start
+whose complete requested horizon is not represented.
 
 Interval operators accept either `portion.Interval` objects or interval strings.
 Strings are parsed with `portion.from_string(value, float)`, so, for example,
@@ -39,25 +40,39 @@ assert str(restricted) == "[8,10]_(available)"
 assert str(guarded) == "[8,10]^(available)"
 ```
 
-`Hold(delta, formula)` requires a formula to remain true throughout the
-half-open interval `[t, t + delta)`, where `t` is the current time. It can also
-be constructed with `formula.hold(delta)` or parsed using `H^delta formula`:
+`Hold(delta, formula)` requires a formula to remain true throughout the closed
+interval `[t, t + delta]`, where `t` is the current time. Its bounded
+existential counterpart, `Eventually(delta, formula)`, requires one true time
+in that same relative window. They can also be constructed fluently or parsed
+using `H^delta formula` and `F^delta formula`:
 
 ```python
-from interval_logic import Hold
+from interval_logic import Eventually, Hold
 
 stable = Hold(2, available)
 assert stable == available.hold(2)
 assert stable == parse_expression("H^2 available")
 assert str(stable) == "H^2 available"
+
+soon = Eventually(2, available)
+assert soon == available.eventually(2)
+assert soon == parse_expression("F^2 available")
 ```
 
-Hold durations are finite, non-negative real numbers, and `Hold(0, formula)` is
-vacuously true. Like every interval operator, a hold window is clipped to the
-evaluation universe. When the relevant intervals are contained in that
-universe, hold satisfies
-`ForAll([a,b], Hold(delta, phi)) == ForAll([a,b+delta), phi)` semantically for
-positive `delta`.
+Durations are finite, non-negative real numbers, and both zero-duration
+operators are identities. `Hold` does not shorten its obligation at an
+evaluation-universe boundary: it can be true at `t` only when the whole closed
+window `[t, t + delta]` is represented. `Eventually` may use any represented
+witness in its window.
+
+When the expanded interval is represented, the absolute/relative identities
+are
+`ForAll(I, Hold(delta, phi)) == ForAll(I + [0,delta], phi)` and
+`Exists(I, Eventually(delta, phi)) == Exists(I + [0,delta], phi)`. The
+simplifier applies these contextual rewrites when an explicit universe proves
+them safe. The familiar Boolean duality between `Hold` and `Eventually` also
+holds on start times whose complete horizon is represented; it is not applied
+blindly at finite-universe boundaries.
 
 Formulas use mathematical notation with precedence-aware parentheses when
 converted to strings:
@@ -84,8 +99,8 @@ assert parse_expression(str(formula)) == formula
 
 The parser accepts `true`/`false`, `!`, `&`, `|`, `xor`, `->`, and `<->`, as
 well as their Unicode counterparts `⊤`/`⊥`, `¬`, `∧`, `∨`, `⊕`, `→`, and `↔`.
-It also parses signal equalities (`j = 1`, `j != 0`), quantifiers, and the
-restrict/guard forms emitted by the formatter. Invalid input raises
+It also parses signal equalities (`j = 1`, `j != 0`), quantifiers, bounded
+temporal operators, and the restrict/guard forms emitted by the formatter. Invalid input raises
 `ParseError`, whose `position`, `line`, and `column` attributes locate the
 problem.
 
@@ -233,11 +248,12 @@ Use `to_nnf()` when only an explicit negation-normal result is needed, and
 `partition_intervals()` when a shared disjoint interval partition must be
 retained even if it is larger. The partitioner raises `ExpansionLimitError`
 when its `max_nodes` budget is exceeded. NNF swaps `Restrict` and `Guard` under
-negation. Because the language has no existential temporal dual for `Hold`, a
-negated hold remains represented as `Not(Hold(...))`.
+negation. Universe-independent NNF retains negated `Hold` and `Eventually`
+nodes because their ordinary duality is conditional at a finite-universe
+boundary.
 
 Examples are available in
-[`notebooks/interval_logic_examples.ipynb`](notebooks/interval_logic_examples.ipynb).
+[`notebooks/tutorial.ipynb`](notebooks/tutorial.ipynb).
 
 ## Development
 

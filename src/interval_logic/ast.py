@@ -90,6 +90,9 @@ class Expression(ABC):
     def hold(self, delta: Real) -> Expression:
         return Hold(delta, self)
 
+    def eventually(self, delta: Real) -> Expression:
+        return Eventually(delta, self)
+
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
         """Rebuild this node with replacement children.
 
@@ -332,22 +335,13 @@ class Exists(Expression):
 
 @dataclass(frozen=True, slots=True)
 class Hold(Expression):
-    """Require ``body`` throughout the half-open window ``[now, now + delta)``."""
+    """Require ``body`` throughout the closed window ``[now, now + delta]``."""
 
     delta: float
     body: Expression | str
 
     def __post_init__(self) -> None:
-        if isinstance(self.delta, bool) or not isinstance(self.delta, Real):
-            raise TypeError("Hold delta must be a real number")
-        delta = float(self.delta)
-        if not isfinite(delta):
-            raise ValueError("Hold delta must be finite")
-        if delta < 0:
-            raise ValueError("Hold delta must be non-negative")
-        if delta == 0:
-            delta = 0.0
-        object.__setattr__(self, "delta", delta)
+        object.__setattr__(self, "delta", _coerce_duration(self.delta, "Hold"))
         object.__setattr__(self, "body", _coerce_expression(self.body, "Hold body"))
 
     @property
@@ -358,8 +352,42 @@ class Hold(Expression):
         return Hold(self.delta, children[0])
 
 
+@dataclass(frozen=True, slots=True)
+class Eventually(Expression):
+    """Require ``body`` at some time in ``[now, now + delta]``."""
+
+    delta: float
+    body: Expression | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "delta", _coerce_duration(self.delta, "Eventually")
+        )
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "Eventually body")
+        )
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.body,)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Eventually(self.delta, children[0])
+
+
 CoreExpression = (
-    Bool | Atom | Equal | Not | And | Or | Restrict | Guard | ForAll | Exists | Hold
+    Bool
+    | Atom
+    | Equal
+    | Not
+    | And
+    | Or
+    | Restrict
+    | Guard
+    | ForAll
+    | Exists
+    | Hold
+    | Eventually
 )
 
 
@@ -426,9 +454,11 @@ def expression_key(expression: Expression | str) -> tuple[Any, ...]:
             return (9, _interval_key(interval), expression_key(body))
         case Hold(delta=delta, body=body):
             return (10, delta, expression_key(body))
+        case Eventually(delta=delta, body=body):
+            return (11, delta, expression_key(body))
         case DerivedExpression():
             return (
-                11,
+                12,
                 type(expression).__module__,
                 type(expression).__qualname__,
                 repr(expression),
@@ -445,6 +475,17 @@ def _coerce_expression(value: Expression | str, label: str) -> Expression:
 
         return parse_expression(value)
     raise TypeError(f"{label} must be an Expression or expression string")
+
+
+def _coerce_duration(value: Real, operator: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{operator} delta must be a real number")
+    delta = float(value)
+    if not isfinite(delta):
+        raise ValueError(f"{operator} delta must be finite")
+    if delta < 0:
+        raise ValueError(f"{operator} delta must be non-negative")
+    return 0.0 if delta == 0 else delta
 
 
 def _require_name(value: object, label: str) -> None:

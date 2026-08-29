@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import isfinite
 
 import portion as P
 
@@ -10,6 +11,7 @@ from .ast import (
     Atom,
     Bool,
     Equal,
+    Eventually,
     Exists,
     Expression,
     ForAll,
@@ -22,6 +24,7 @@ from .ast import (
     _coerce_expression,
     expression_key,
 )
+from .intervals import erode_forward, minkowski_forward
 from .transform import _push_negation, lower_derived
 
 
@@ -106,6 +109,16 @@ def _simplify_once(
                 max_nodes=max_nodes,
                 allow_distribution=allow_distribution,
             )
+            if universe is not None and isinstance(child, Hold):
+                if erode_forward(universe, child.delta) == universe:
+                    return Eventually(
+                        child.delta, _push_negation(child.body, negated=True)
+                    )
+            if universe is not None and isinstance(child, Eventually):
+                if erode_forward(universe, child.delta) == universe:
+                    return Hold(
+                        child.delta, _push_negation(child.body, negated=True)
+                    )
             return _push_negation(Not(child))
         case And(operands=operands):
             return _simplify_variadic(
@@ -185,6 +198,10 @@ def _simplify_once(
                 return Bool(False)
             if isinstance(child, Guard):
                 return ForAll(interval & child.interval, child.body)
+            if universe is not None and isinstance(child, Hold):
+                expanded = minkowski_forward(effective, child.delta)
+                if (expanded - universe).empty:
+                    return ForAll(expanded, child.body)
             return ForAll(interval, child)
         case Exists(interval=interval, body=body):
             if interval.empty:
@@ -204,6 +221,9 @@ def _simplify_once(
                 return Bool(True)
             if isinstance(child, Restrict):
                 return Exists(interval & child.interval, child.body)
+            if universe is not None and isinstance(child, Eventually):
+                expanded = minkowski_forward(effective, child.delta)
+                return Exists(expanded, child.body)
             return Exists(interval, child)
         case Hold(delta=delta, body=body):
             child = _simplify_once(
@@ -212,11 +232,52 @@ def _simplify_once(
                 max_nodes=max_nodes,
                 allow_distribution=allow_distribution,
             )
-            if delta == 0 or child == Bool(True):
-                return Bool(True)
+            if delta == 0:
+                return child
             if child == Bool(False):
                 return child
+            if child == Bool(True):
+                if universe is not None and erode_forward(universe, delta) == universe:
+                    return child
+                return Hold(delta, child)
+            if isinstance(child, Hold):
+                combined = delta + child.delta
+                if isfinite(combined):
+                    return Hold(combined, child.body)
+            if isinstance(child, And):
+                candidate = And(Hold(delta, item) for item in child.operands)
+                if candidate.node_count <= max_nodes:
+                    return candidate
+            if isinstance(child, (ForAll, Exists)):
+                if universe is not None and erode_forward(universe, delta) == universe:
+                    return child
             return Hold(delta, child)
+        case Eventually(delta=delta, body=body):
+            child = _simplify_once(
+                body,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if delta == 0:
+                return child
+            if isinstance(child, Bool):
+                return child
+            if (
+                isinstance(child, Eventually)
+                and universe is not None
+                and len(list(universe)) <= 1
+            ):
+                combined = delta + child.delta
+                if isfinite(combined):
+                    return Eventually(combined, child.body)
+            if isinstance(child, Or):
+                candidate = Or(Eventually(delta, item) for item in child.operands)
+                if candidate.node_count <= max_nodes:
+                    return candidate
+            if isinstance(child, (ForAll, Exists)):
+                return child
+            return Eventually(delta, child)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -256,9 +317,12 @@ def _simplify_variadic(
     unique = _unique_sorted(retained)
     if _contains_complements(unique):
         return Bool(annihilator)
+    if is_and and _contains_incompatible_holds(unique):
+        return Bool(False)
 
     unique = _apply_absorption(unique, is_and)
     unique = _merge_interval_operators(unique, is_and)
+    unique = _merge_temporal_operators(unique, is_and)
     unique = _apply_quantifier_implication(unique, is_and, universe)
     unique = _unique_sorted(unique)
 
@@ -310,7 +374,7 @@ def _negate_nnf(expression: Expression) -> Expression:
             return Exists(interval, _negate_nnf(body))
         case Exists(interval=interval, body=body):
             return ForAll(interval, _negate_nnf(body))
-        case Hold():
+        case Hold() | Eventually():
             return Not(expression)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
@@ -423,6 +487,33 @@ def _merge_interval_operators(
     if is_and:
         return _merge_forall(operands)
     return _merge_exists(operands)
+
+
+def _merge_temporal_operators(
+    operands: list[Expression], is_and: bool
+) -> list[Expression]:
+    others = [
+        item for item in operands if not isinstance(item, (Hold, Eventually))
+    ]
+    holds = [item for item in operands if isinstance(item, Hold)]
+    eventualities = [item for item in operands if isinstance(item, Eventually)]
+
+    for body, group in _group_by(holds, lambda item: item.body):
+        deltas = [item.delta for item in group]
+        others.append(Hold(max(deltas) if is_and else min(deltas), body))
+    for body, group in _group_by(eventualities, lambda item: item.body):
+        deltas = [item.delta for item in group]
+        others.append(Eventually(min(deltas) if is_and else max(deltas), body))
+    return others
+
+
+def _contains_incompatible_holds(operands: list[Expression]) -> bool:
+    holds = [item for item in operands if isinstance(item, Hold)]
+    return any(
+        _negate_nnf(left.body) == right.body
+        for index, left in enumerate(holds)
+        for right in holds[index + 1 :]
+    )
 
 
 def _apply_quantifier_implication(

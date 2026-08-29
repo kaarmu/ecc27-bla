@@ -8,6 +8,7 @@ from .ast import (
     Bool,
     DerivedExpression,
     Equal,
+    Eventually,
     Exists,
     Expression,
     ForAll,
@@ -129,6 +130,8 @@ def _format(
             text = f"{symbols.exists}{interval}: {_format(body, symbols, 0)}"
         case Hold(delta=delta, body=body):
             text = f"H^{_format_delta(delta)} {_format(body, symbols, _NOT)}"
+        case Eventually(delta=delta, body=body):
+            text = f"F^{_format_delta(delta)} {_format(body, symbols, _NOT)}"
         case Implies(left=left, right=right):
             text = (
                 _format(left, symbols, _IMPLIES + 1)
@@ -170,7 +173,7 @@ def _precedence(expression: Expression) -> int:
             return _OR
         case And():
             return _AND
-        case Not() | Hold():
+        case Not() | Hold() | Eventually():
             return _NOT
         case Bool() | Atom() | Equal() | Restrict() | Guard() | DerivedExpression():
             return _ATOM
