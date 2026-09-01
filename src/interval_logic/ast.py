@@ -3,13 +3,20 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import isfinite
-from numbers import Real
 from typing import Any, Iterable
 
 import portion as P
 
-ALL_TIME = P.open(-P.inf, P.inf)
+from .temporal import (
+    RelativeInterval,
+    TemporalParameter,
+    TemporalParameterInput,
+    coerce_temporal_parameter,
+    span_parameter,
+    temporal_parameter_key,
+)
+
+REAL_LINE = P.open(-P.inf, P.inf)
 
 class Expression(ABC):
     """Base class for immutable interval-logic expressions."""
@@ -57,7 +64,7 @@ class Expression(ABC):
 
     def __bool__(self) -> bool:
         raise TypeError(
-            "logic expressions have no Python truth value; use holds() or denote()"
+            "logic expressions have no Python truth value; use satisfies() or satisfying_anchors()"
         )
 
     def __invert__(self) -> Expression:
@@ -75,23 +82,32 @@ class Expression(ABC):
     def __ror__(self, other: Expression | bool | str) -> Expression:
         return Or((as_expr(other), self))
 
-    def restrict(self, interval: P.Interval | str) -> Expression:
-        return Restrict(interval, self)
+    def eventually(self, parameter: TemporalParameterInput = None) -> Expression:
+        return Eventually(parameter, self)
 
-    def guard(self, interval: P.Interval | str) -> Expression:
-        return Guard(interval, self)
-    
-    def forall(self, interval: P.Interval) -> Expression:
-        return ForAll(interval, self)
-    
-    def exists(self, interval: P.Interval) -> Expression:
-        return Exists(interval, self)
+    def always(self, parameter: TemporalParameterInput = None) -> Expression:
+        return UniversalCondition(parameter, self)
 
-    def hold(self, delta: Real) -> Expression:
-        return Hold(delta, self)
+    def until(
+        self,
+        other: Expression | str,
+        parameter: TemporalParameterInput = None,
+    ) -> Expression:
+        return Until(parameter, self, other)
 
-    def eventually(self, delta: Real) -> Expression:
-        return Eventually(delta, self)
+    def weak_until(
+        self,
+        other: Expression | str,
+        parameter: TemporalParameterInput = None,
+    ) -> Expression:
+        return WeakUntil(parameter, self, other)
+
+    def release(
+        self,
+        other: Expression | str,
+        parameter: TemporalParameterInput = None,
+    ) -> Expression:
+        return Release(parameter, self, other)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
         """Rebuild this node with replacement children.
@@ -147,14 +163,14 @@ class Term(ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class Natural(Term):
+class NaturalLiteral(Term):
     value: int
 
     def __post_init__(self) -> None:
         if type(self.value) is not int:
-            raise TypeError("Natural value must be an integer")
+            raise TypeError("NaturalLiteral value must be an integer")
         if self.value < 0:
-            raise ValueError("Natural value must be non-negative")
+            raise ValueError("NaturalLiteral value must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,11 +195,11 @@ class Bool(Expression):
 
 
 @dataclass(frozen=True, slots=True)
-class Atom(Expression):
+class Proposition(Expression):
     name: str
 
     def __post_init__(self) -> None:
-        _require_name(self.name, "Atom")
+        _require_name(self.name, "Proposition")
 
     @property
     def children(self) -> tuple[Expression, ...]:
@@ -258,14 +274,16 @@ class Or(Expression):
 
 
 @dataclass(frozen=True, slots=True)
-class Restrict(Expression):
-    interval: P.Interval | str
+class RestrictiveSelection(Expression):
+    interval: TemporalParameterInput
     body: Expression | str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         object.__setattr__(
-            self, "body", _coerce_expression(self.body, "Restrict body")
+            self, "interval", coerce_temporal_parameter(self.interval)
+        )
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "RestrictiveSelection body")
         )
 
     @property
@@ -273,18 +291,24 @@ class Restrict(Expression):
         return (self.body,)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return Restrict(self.interval, children[0])
+        return RestrictiveSelection(self.interval, children[0])
+
+    @property
+    def parameter(self) -> TemporalParameter:
+        return self.interval
 
 
 @dataclass(frozen=True, slots=True)
-class Guard(Expression):
-    interval: P.Interval | str
+class VacuousSelection(Expression):
+    interval: TemporalParameterInput
     body: Expression | str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         object.__setattr__(
-            self, "body", _coerce_expression(self.body, "Guard body")
+            self, "interval", coerce_temporal_parameter(self.interval)
+        )
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "VacuousSelection body")
         )
 
     @property
@@ -292,18 +316,51 @@ class Guard(Expression):
         return (self.body,)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return Guard(self.interval, children[0])
+        return VacuousSelection(self.interval, children[0])
+
+    @property
+    def parameter(self) -> TemporalParameter:
+        return self.interval
 
 
 @dataclass(frozen=True, slots=True)
-class ForAll(Expression):
-    interval: P.Interval | str
+class Selection(Expression):
+    parameter: TemporalParameterInput
+    inside: Expression | str
+    outside: Expression | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "parameter", coerce_temporal_parameter(self.parameter)
+        )
+        object.__setattr__(
+            self, "inside", _coerce_expression(self.inside, "Selection inside operand")
+        )
+        object.__setattr__(
+            self,
+            "outside",
+            _coerce_expression(self.outside, "Selection outside operand"),
+        )
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.inside, self.outside)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Selection(self.parameter, children[0], children[1])
+
+
+@dataclass(frozen=True, slots=True)
+class UniversalCondition(Expression):
+    interval: TemporalParameterInput
     body: Expression | str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         object.__setattr__(
-            self, "body", _coerce_expression(self.body, "ForAll body")
+            self, "interval", coerce_temporal_parameter(self.interval)
+        )
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "UniversalCondition body")
         )
 
     @property
@@ -311,18 +368,24 @@ class ForAll(Expression):
         return (self.body,)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return ForAll(self.interval, children[0])
+        return UniversalCondition(self.interval, children[0])
+
+    @property
+    def parameter(self) -> TemporalParameter:
+        return self.interval
 
 
 @dataclass(frozen=True, slots=True)
-class Exists(Expression):
-    interval: P.Interval | str
+class ExistentialCondition(Expression):
+    interval: TemporalParameterInput
     body: Expression | str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "interval", _coerce_interval(self.interval))
         object.__setattr__(
-            self, "body", _coerce_expression(self.body, "Exists body")
+            self, "interval", coerce_temporal_parameter(self.interval)
+        )
+        object.__setattr__(
+            self, "body", _coerce_expression(self.body, "ExistentialCondition body")
         )
 
     @property
@@ -330,38 +393,23 @@ class Exists(Expression):
         return (self.body,)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return Exists(self.interval, children[0])
-
-
-@dataclass(frozen=True, slots=True)
-class Hold(Expression):
-    """Require ``body`` throughout the closed window ``[now, now + delta]``."""
-
-    delta: float
-    body: Expression | str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "delta", _coerce_duration(self.delta, "Hold"))
-        object.__setattr__(self, "body", _coerce_expression(self.body, "Hold body"))
+        return ExistentialCondition(self.interval, children[0])
 
     @property
-    def children(self) -> tuple[Expression, ...]:
-        return (self.body,)
-
-    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return Hold(self.delta, children[0])
+    def parameter(self) -> TemporalParameter:
+        return self.interval
 
 
 @dataclass(frozen=True, slots=True)
 class Eventually(Expression):
-    """Require ``body`` at some time in ``[now, now + delta]``."""
+    """Require ``body`` at some time in the resolved parameter window."""
 
-    delta: float
+    parameter: TemporalParameterInput
     body: Expression | str
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "delta", _coerce_duration(self.delta, "Eventually")
+            self, "parameter", coerce_temporal_parameter(self.parameter)
         )
         object.__setattr__(
             self, "body", _coerce_expression(self.body, "Eventually body")
@@ -372,22 +420,128 @@ class Eventually(Expression):
         return (self.body,)
 
     def _with_children(self, children: tuple[Expression, ...]) -> Expression:
-        return Eventually(self.delta, children[0])
+        return Eventually(self.parameter, children[0])
+
+    @property
+    def delta(self) -> float | None:
+        """Compatibility duration for a finite closed one-sided parameter."""
+
+        if not isinstance(self.parameter, RelativeInterval):
+            return None
+        atoms = list(self.parameter.offsets)
+        if len(atoms) != 1:
+            return None
+        atom = atoms[0]
+        if (
+            atom.lower == 0
+            and atom.left.name == "CLOSED"
+            and atom.right.name == "CLOSED"
+            and atom.upper != P.inf
+        ):
+            return float(atom.upper)
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class Until(Expression):
+    parameter: TemporalParameterInput
+    left: Expression | str
+    right: Expression | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "parameter", coerce_temporal_parameter(self.parameter)
+        )
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "Until left operand")
+        )
+        object.__setattr__(
+            self, "right", _coerce_expression(self.right, "Until right operand")
+        )
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.left, self.right)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Until(self.parameter, children[0], children[1])
+
+
+@dataclass(frozen=True, slots=True)
+class Release(Expression):
+    parameter: TemporalParameterInput
+    left: Expression | str
+    right: Expression | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "parameter", coerce_temporal_parameter(self.parameter)
+        )
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "Release left operand")
+        )
+        object.__setattr__(
+            self, "right", _coerce_expression(self.right, "Release right operand")
+        )
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.left, self.right)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return Release(self.parameter, children[0], children[1])
+
+
+@dataclass(frozen=True, slots=True)
+class WeakUntil(DerivedExpression):
+    parameter: TemporalParameterInput
+    left: Expression | str
+    right: Expression | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "parameter", coerce_temporal_parameter(self.parameter)
+        )
+        object.__setattr__(
+            self, "left", _coerce_expression(self.left, "WeakUntil left operand")
+        )
+        object.__setattr__(
+            self,
+            "right",
+            _coerce_expression(self.right, "WeakUntil right operand"),
+        )
+
+    @property
+    def children(self) -> tuple[Expression, ...]:
+        return (self.left, self.right)
+
+    def _with_children(self, children: tuple[Expression, ...]) -> Expression:
+        return WeakUntil(self.parameter, children[0], children[1])
+
+    def lower(self) -> Expression:
+        return Or(
+            (
+                Until(self.parameter, self.left, self.right),
+                UniversalCondition(span_parameter(self.parameter), self.left),
+            )
+        )
 
 
 CoreExpression = (
     Bool
-    | Atom
+    | Proposition
     | Equal
     | Not
     | And
     | Or
-    | Restrict
-    | Guard
-    | ForAll
-    | Exists
-    | Hold
+    | RestrictiveSelection
+    | VacuousSelection
+    | Selection
+    | UniversalCondition
+    | ExistentialCondition
     | Eventually
+    | Until
+    | Release
 )
 
 
@@ -410,7 +564,7 @@ def as_term(value: Term | int) -> Term:
     if isinstance(value, Term):
         return value
     if type(value) is int:
-        return Natural(value)
+        return NaturalLiteral(value)
     raise TypeError(f"expected Term or int, got {type(value).__name__}")
 
 
@@ -420,7 +574,7 @@ def term_key(term: Term) -> tuple[Any, ...]:
     match term:
         case Signal(name=name):
             return (0, name)
-        case Natural(value=value):
+        case NaturalLiteral(value=value):
             return (1, value)
         case _:
             raise TypeError(f"unsupported term type: {type(term).__name__}")
@@ -434,7 +588,7 @@ def expression_key(expression: Expression | str) -> tuple[Any, ...]:
     match expression:
         case Bool(value=value):
             return (0, value)
-        case Atom(name=name):
+        case Proposition(name=name):
             return (1, name)
         case Equal(left=left, right=right):
             return (2, term_key(left), term_key(right))
@@ -444,21 +598,40 @@ def expression_key(expression: Expression | str) -> tuple[Any, ...]:
             return (4, tuple(expression_key(item) for item in operands))
         case Or(operands=operands):
             return (5, tuple(expression_key(item) for item in operands))
-        case Restrict(interval=interval, body=body):
-            return (6, _interval_key(interval), expression_key(body))
-        case Guard(interval=interval, body=body):
-            return (7, _interval_key(interval), expression_key(body))
-        case ForAll(interval=interval, body=body):
-            return (8, _interval_key(interval), expression_key(body))
-        case Exists(interval=interval, body=body):
-            return (9, _interval_key(interval), expression_key(body))
-        case Hold(delta=delta, body=body):
-            return (10, delta, expression_key(body))
-        case Eventually(delta=delta, body=body):
-            return (11, delta, expression_key(body))
-        case DerivedExpression():
+        case RestrictiveSelection(interval=interval, body=body):
+            return (6, temporal_parameter_key(interval), expression_key(body))
+        case VacuousSelection(interval=interval, body=body):
+            return (7, temporal_parameter_key(interval), expression_key(body))
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            return (
+                8,
+                temporal_parameter_key(parameter),
+                expression_key(inside),
+                expression_key(outside),
+            )
+        case UniversalCondition(interval=interval, body=body):
+            return (9, temporal_parameter_key(interval), expression_key(body))
+        case ExistentialCondition(interval=interval, body=body):
+            return (10, temporal_parameter_key(interval), expression_key(body))
+        case Eventually(parameter=parameter, body=body):
+            return (11, temporal_parameter_key(parameter), expression_key(body))
+        case Until(parameter=parameter, left=left, right=right):
             return (
                 12,
+                temporal_parameter_key(parameter),
+                expression_key(left),
+                expression_key(right),
+            )
+        case Release(parameter=parameter, left=left, right=right):
+            return (
+                13,
+                temporal_parameter_key(parameter),
+                expression_key(left),
+                expression_key(right),
+            )
+        case DerivedExpression():
+            return (
+                14,
                 type(expression).__module__,
                 type(expression).__qualname__,
                 repr(expression),
@@ -477,17 +650,6 @@ def _coerce_expression(value: Expression | str, label: str) -> Expression:
     raise TypeError(f"{label} must be an Expression or expression string")
 
 
-def _coerce_duration(value: Real, operator: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise TypeError(f"{operator} delta must be a real number")
-    delta = float(value)
-    if not isfinite(delta):
-        raise ValueError(f"{operator} delta must be finite")
-    if delta < 0:
-        raise ValueError(f"{operator} delta must be non-negative")
-    return 0.0 if delta == 0 else delta
-
-
 def _require_name(value: object, label: str) -> None:
     if not isinstance(value, str):
         raise TypeError(f"{label} name must be a string")
@@ -496,11 +658,10 @@ def _require_name(value: object, label: str) -> None:
 
 
 def _coerce_interval(value: P.Interval | str) -> P.Interval:
-    if isinstance(value, P.Interval):
-        return value
-    if isinstance(value, str):
-        return P.from_string(value, float)
-    raise TypeError("interval must be a portion.Interval or string")
+    interval = coerce_temporal_parameter(value)
+    if not isinstance(interval, P.Interval):
+        raise TypeError("expected an absolute temporal parameter")
+    return interval
 
 
 def _expression_tuple(

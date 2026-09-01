@@ -1,10 +1,7 @@
 # Interval logic definition
 
 This file defines the interval-logic language and its trace-checking
-semantics. The semantics distinguishes the anchor of a relative temporal
-parameter from the time at which an operand is evaluated.
-
-Let $\mathbb N_0=\{0,1,2,\ldots\}$.
+semantics.
 
 ## Syntax
 
@@ -14,13 +11,15 @@ A numeric term is either a natural-number literal or a signal name:
 
 $$
 \tau ::= n \mid j,
-\qquad n\in\mathbb N_0.
+\qquad n\in\mathbb \Omega,
+\quad j: \mathbb R_{\geq0} \rightarrow \Omega.
 $$
 
 Atomic formulas are proposition names or equalities between numeric terms:
 
 $$
-\alpha ::= p \mid (\tau_1=\tau_2).
+\alpha ::= p \mid (\tau_1=\tau_2),
+\qquad p\in\mathcal{AP}.
 $$
 
 Inequality is the shorthand
@@ -78,10 +77,12 @@ The two fundamental temporal constructs have distinct roles:
 A minimal grammar is
 
 $$
-\varphi ::= \top \mid \alpha \mid \neg\varphi
-\mid (\varphi\land\varphi)
-\mid \langle\varphi,\varphi\rangle_\rho
-\mid \varphi\mathbin{\mathsf U_\rho}\varphi.
+\varphi ::= \top
+  \mid \alpha
+  \mid \neg\varphi
+  \mid (\varphi\land\varphi)
+  \mid \langle\varphi,\psi\rangle_\rho
+  \mid \varphi\mathbin{\mathsf U_\rho}\psi.
 $$
 
 The usual Boolean operations are abbreviations:
@@ -209,12 +210,12 @@ condition re-anchors its operand at every inspected time.
 ## Trace-checking semantics
 
 The syntax does not prescribe a single verification method. The denotational
-semantics in this section checks a formula against a complete, known trace.
+semantics in this section checks a formula against a complete, known trace $w\in W$.
 Verification over symbolic or partially known behavior may use a different
 semantic domain while retaining the language.
 
-Fix an evaluation universe $\mathbb I\subseteq\mathbb R$. A trace assigns
-each proposition $p$ a truth set $V(p)\subseteq\mathbb I$ and each numeric
+Fix an evaluation universe $\mathbb I\subseteq\mathbb R$, possibly dependent on $w$. The trace assigns
+each proposition $p$ a truth set $V_w(p)\subseteq\mathbb I$ and each numeric
 signal $j$ a piecewise-constant function
 $j:\mathbb I\to\mathbb N_0$.
 

@@ -6,25 +6,28 @@ from math import isfinite
 import portion as P
 
 from .ast import (
-    ALL_TIME,
+    REAL_LINE,
     And,
-    Atom,
+    Proposition,
     Bool,
     Equal,
     Eventually,
-    Exists,
+    ExistentialCondition,
     Expression,
-    ForAll,
-    Guard,
-    Hold,
-    Natural,
+    Release,
+    Selection,
+    Until,
+    UniversalCondition,
+    VacuousSelection,
+    NaturalLiteral,
     Not,
     Or,
-    Restrict,
+    RestrictiveSelection,
     _coerce_expression,
     expression_key,
 )
-from .intervals import erode_forward, minkowski_forward
+from .intervals import minkowski_forward
+from .temporal import RelativeInterval, parameter_interval
 from .transform import _push_negation, lower_derived
 
 
@@ -94,12 +97,12 @@ def _simplify_once(
     allow_distribution: bool,
 ) -> Expression:
     match expression:
-        case Bool() | Atom():
+        case Bool() | Proposition():
             return expression
         case Equal(left=left, right=right):
             if left == right:
                 return Bool(True)
-            if isinstance(left, Natural) and isinstance(right, Natural):
+            if isinstance(left, NaturalLiteral) and isinstance(right, NaturalLiteral):
                 return Bool(left.value == right.value)
             return expression
         case Not(operand=operand):
@@ -109,16 +112,6 @@ def _simplify_once(
                 max_nodes=max_nodes,
                 allow_distribution=allow_distribution,
             )
-            if universe is not None and isinstance(child, Hold):
-                if erode_forward(universe, child.delta) == universe:
-                    return Eventually(
-                        child.delta, _push_negation(child.body, negated=True)
-                    )
-            if universe is not None and isinstance(child, Eventually):
-                if erode_forward(universe, child.delta) == universe:
-                    return Hold(
-                        child.delta, _push_negation(child.body, negated=True)
-                    )
             return _push_negation(Not(child))
         case And(operands=operands):
             return _simplify_variadic(
@@ -136,10 +129,10 @@ def _simplify_once(
                 max_nodes=max_nodes,
                 allow_distribution=allow_distribution,
             )
-        case Restrict(interval=interval, body=body):
-            if interval.empty:
+        case RestrictiveSelection(interval=interval, body=body):
+            if parameter_interval(interval).empty:
                 return Bool(False)
-            if universe is not None:
+            if universe is not None and isinstance(interval, P.Interval):
                 effective = interval & universe
                 if effective.empty:
                     return Bool(False)
@@ -151,17 +144,25 @@ def _simplify_once(
             )
             if child == Bool(False):
                 return child
-            if interval == ALL_TIME:
+            if isinstance(interval, P.Interval) and interval == REAL_LINE:
                 return child
-            if universe is not None and (universe - interval).empty:
+            if (
+                universe is not None
+                and isinstance(interval, P.Interval)
+                and (universe - interval).empty
+            ):
                 return child
-            if isinstance(child, Restrict):
-                return Restrict(interval & child.interval, child.body)
-            return Restrict(interval, child)
-        case Guard(interval=interval, body=body):
-            if interval.empty:
+            if (
+                isinstance(interval, P.Interval)
+                and isinstance(child, RestrictiveSelection)
+                and isinstance(child.interval, P.Interval)
+            ):
+                return RestrictiveSelection(interval & child.interval, child.body)
+            return RestrictiveSelection(interval, child)
+        case VacuousSelection(interval=interval, body=body):
+            if parameter_interval(interval).empty:
                 return Bool(True)
-            if universe is not None:
+            if universe is not None and isinstance(interval, P.Interval):
                 effective = interval & universe
                 if effective.empty:
                     return Bool(True)
@@ -173,111 +174,228 @@ def _simplify_once(
             )
             if child == Bool(True):
                 return child
-            if interval == ALL_TIME:
-                return child
-            if universe is not None and (universe - interval).empty:
-                return child
-            if isinstance(child, Guard):
-                return Guard(interval & child.interval, child.body)
-            return Guard(interval, child)
-        case ForAll(interval=interval, body=body):
-            if interval.empty:
-                return Bool(True)
-            effective = interval if universe is None else interval & universe
-            if universe is not None and effective.empty:
-                return Bool(True)
-            child = _simplify_once(
-                body,
-                universe=universe,
-                max_nodes=max_nodes,
-                allow_distribution=allow_distribution,
-            )
-            if child == Bool(True):
-                return child
-            if universe is not None and child == Bool(False):
-                return Bool(False)
-            if isinstance(child, Guard):
-                return ForAll(interval & child.interval, child.body)
-            if universe is not None and isinstance(child, Hold):
-                expanded = minkowski_forward(effective, child.delta)
-                if (expanded - universe).empty:
-                    return ForAll(expanded, child.body)
-            return ForAll(interval, child)
-        case Exists(interval=interval, body=body):
-            if interval.empty:
-                return Bool(False)
-            effective = interval if universe is None else interval & universe
-            if universe is not None and effective.empty:
-                return Bool(False)
-            child = _simplify_once(
-                body,
-                universe=universe,
-                max_nodes=max_nodes,
-                allow_distribution=allow_distribution,
-            )
-            if child == Bool(False):
-                return child
-            if universe is not None and child == Bool(True):
-                return Bool(True)
-            if isinstance(child, Restrict):
-                return Exists(interval & child.interval, child.body)
-            if universe is not None and isinstance(child, Eventually):
-                expanded = minkowski_forward(effective, child.delta)
-                return Exists(expanded, child.body)
-            return Exists(interval, child)
-        case Hold(delta=delta, body=body):
-            child = _simplify_once(
-                body,
-                universe=universe,
-                max_nodes=max_nodes,
-                allow_distribution=allow_distribution,
-            )
-            if delta == 0:
-                return child
-            if child == Bool(False):
-                return child
-            if child == Bool(True):
-                if universe is not None and erode_forward(universe, delta) == universe:
-                    return child
-                return Hold(delta, child)
-            if isinstance(child, Hold):
-                combined = delta + child.delta
-                if isfinite(combined):
-                    return Hold(combined, child.body)
-            if isinstance(child, And):
-                candidate = And(Hold(delta, item) for item in child.operands)
-                if candidate.node_count <= max_nodes:
-                    return candidate
-            if isinstance(child, (ForAll, Exists)):
-                if universe is not None and erode_forward(universe, delta) == universe:
-                    return child
-            return Hold(delta, child)
-        case Eventually(delta=delta, body=body):
-            child = _simplify_once(
-                body,
-                universe=universe,
-                max_nodes=max_nodes,
-                allow_distribution=allow_distribution,
-            )
-            if delta == 0:
-                return child
-            if isinstance(child, Bool):
+            if isinstance(interval, P.Interval) and interval == REAL_LINE:
                 return child
             if (
+                universe is not None
+                and isinstance(interval, P.Interval)
+                and (universe - interval).empty
+            ):
+                return child
+            if (
+                isinstance(interval, P.Interval)
+                and isinstance(child, VacuousSelection)
+                and isinstance(child.interval, P.Interval)
+            ):
+                return VacuousSelection(interval & child.interval, child.body)
+            return VacuousSelection(interval, child)
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            selected = _simplify_once(
+                inside,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            fallback = _simplify_once(
+                outside,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if selected == fallback:
+                return selected
+            if parameter_interval(parameter).empty:
+                return fallback
+            if isinstance(parameter, P.Interval):
+                if parameter == REAL_LINE:
+                    return selected
+                if universe is not None:
+                    effective = parameter & universe
+                    if effective.empty:
+                        return fallback
+                    if (universe - parameter).empty:
+                        return selected
+            return Selection(parameter, selected, fallback)
+        case UniversalCondition(interval=interval, body=body):
+            if parameter_interval(interval).empty:
+                return Bool(True)
+            effective = (
+                interval
+                if universe is None or not isinstance(interval, P.Interval)
+                else interval & universe
+            )
+            if (
+                universe is not None
+                and isinstance(effective, P.Interval)
+                and effective.empty
+            ):
+                return Bool(True)
+            child = _simplify_once(
+                body,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if child == Bool(True):
+                return child
+            if child == Bool(False) and (
+                (
+                    isinstance(interval, P.Interval)
+                    and universe is not None
+                    and not (interval & universe).empty
+                )
+                or (
+                    isinstance(interval, RelativeInterval)
+                    and 0 in interval.offsets
+                )
+            ):
+                return Bool(False)
+            if (
+                isinstance(interval, P.Interval)
+                and isinstance(child, VacuousSelection)
+                and isinstance(child.interval, P.Interval)
+            ):
+                return UniversalCondition(interval & child.interval, child.body)
+            return UniversalCondition(interval, child)
+        case ExistentialCondition(interval=interval, body=body):
+            if parameter_interval(interval).empty:
+                return Bool(False)
+            effective = (
+                interval
+                if universe is None or not isinstance(interval, P.Interval)
+                else interval & universe
+            )
+            if (
+                universe is not None
+                and isinstance(effective, P.Interval)
+                and effective.empty
+            ):
+                return Bool(False)
+            child = _simplify_once(
+                body,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if child == Bool(False):
+                return child
+            if child == Bool(True) and (
+                (
+                    isinstance(interval, P.Interval)
+                    and universe is not None
+                    and not (interval & universe).empty
+                )
+                or (
+                    isinstance(interval, RelativeInterval)
+                    and 0 in interval.offsets
+                )
+            ):
+                return Bool(True)
+            if (
+                isinstance(interval, P.Interval)
+                and isinstance(child, RestrictiveSelection)
+                and isinstance(child.interval, P.Interval)
+            ):
+                return ExistentialCondition(interval & child.interval, child.body)
+            if (
+                universe is not None
+                and isinstance(interval, P.Interval)
+                and isinstance(child, Eventually)
+                and child.delta is not None
+            ):
+                expanded = minkowski_forward(effective, child.delta)
+                if _is_connected_or_empty(expanded):
+                    return ExistentialCondition(expanded, child.body)
+            return ExistentialCondition(interval, child)
+        case Eventually(parameter=parameter, body=body):
+            child = _simplify_once(
+                body,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            offsets = parameter_interval(parameter)
+            if offsets.empty:
+                return Bool(False)
+            if isinstance(parameter, RelativeInterval) and offsets == P.singleton(0):
+                return child
+            if child == Bool(False):
+                return child
+            if child == Bool(True):
+                if isinstance(parameter, RelativeInterval) and 0 in offsets:
+                    return child
+                if (
+                    isinstance(parameter, P.Interval)
+                    and universe is not None
+                    and not (parameter & universe).empty
+                ):
+                    return child
+            if (
                 isinstance(child, Eventually)
+                and isinstance(parameter, RelativeInterval)
+                and child.delta is not None
+                and expression.delta is not None
                 and universe is not None
                 and len(list(universe)) <= 1
             ):
-                combined = delta + child.delta
+                combined = expression.delta + child.delta
                 if isfinite(combined):
                     return Eventually(combined, child.body)
             if isinstance(child, Or):
-                candidate = Or(Eventually(delta, item) for item in child.operands)
+                candidate = Or(Eventually(parameter, item) for item in child.operands)
                 if candidate.node_count <= max_nodes:
                     return candidate
-            if isinstance(child, (ForAll, Exists)):
+            if (
+                isinstance(child, (UniversalCondition, ExistentialCondition))
+                and isinstance(child.interval, P.Interval)
+                and (
+                    (
+                        isinstance(parameter, RelativeInterval)
+                        and 0 in parameter.offsets
+                    )
+                    or (
+                        isinstance(parameter, P.Interval)
+                        and universe is not None
+                        and not (parameter & universe).empty
+                    )
+                )
+            ):
                 return child
-            return Eventually(delta, child)
+            return Eventually(parameter, child)
+        case Until(parameter=parameter, left=left, right=right):
+            if parameter_interval(parameter).empty:
+                return Bool(False)
+            left_child = _simplify_once(
+                left,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            right_child = _simplify_once(
+                right,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            if right_child == Bool(False):
+                return right_child
+            if left_child == Bool(True):
+                return ExistentialCondition(parameter, right_child)
+            return Until(parameter, left_child, right_child)
+        case Release(parameter=parameter, left=left, right=right):
+            left_child = _simplify_once(
+                left,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            right_child = _simplify_once(
+                right,
+                universe=universe,
+                max_nodes=max_nodes,
+                allow_distribution=allow_distribution,
+            )
+            return Release(parameter, left_child, right_child)
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -317,13 +435,10 @@ def _simplify_variadic(
     unique = _unique_sorted(retained)
     if _contains_complements(unique):
         return Bool(annihilator)
-    if is_and and _contains_incompatible_holds(unique):
-        return Bool(False)
-
     unique = _apply_absorption(unique, is_and)
     unique = _merge_interval_operators(unique, is_and)
     unique = _merge_temporal_operators(unique, is_and)
-    unique = _apply_quantifier_implication(unique, is_and, universe)
+    unique = _apply_condition_implication(unique, is_and, universe)
     unique = _unique_sorted(unique)
 
     if _contains_complements(unique):
@@ -360,22 +475,40 @@ def _negate_nnf(expression: Expression) -> Expression:
             return Bool(not value)
         case Not(operand=operand):
             return operand
-        case Atom() | Equal():
+        case Proposition() | Equal():
             return Not(expression)
         case And(operands=operands):
             return _make_variadic(Or, [_negate_nnf(item) for item in operands])
         case Or(operands=operands):
             return _make_variadic(And, [_negate_nnf(item) for item in operands])
-        case Restrict(interval=interval, body=body):
-            return Guard(interval, _negate_nnf(body))
-        case Guard(interval=interval, body=body):
-            return Restrict(interval, _negate_nnf(body))
-        case ForAll(interval=interval, body=body):
-            return Exists(interval, _negate_nnf(body))
-        case Exists(interval=interval, body=body):
-            return ForAll(interval, _negate_nnf(body))
-        case Hold() | Eventually():
-            return Not(expression)
+        case RestrictiveSelection(interval=interval, body=body):
+            return VacuousSelection(interval, _negate_nnf(body))
+        case VacuousSelection(interval=interval, body=body):
+            return RestrictiveSelection(interval, _negate_nnf(body))
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            return Selection(
+                parameter,
+                _negate_nnf(inside),
+                _negate_nnf(outside),
+            )
+        case UniversalCondition(interval=interval, body=body):
+            return ExistentialCondition(interval, _negate_nnf(body))
+        case ExistentialCondition(interval=interval, body=body):
+            return UniversalCondition(interval, _negate_nnf(body))
+        case Eventually(parameter=parameter, body=body):
+            return UniversalCondition(parameter, _negate_nnf(body))
+        case Until(parameter=parameter, left=left, right=right):
+            return Release(
+                parameter,
+                _negate_nnf(left),
+                _negate_nnf(right),
+            )
+        case Release(parameter=parameter, left=left, right=right):
+            return Until(
+                parameter,
+                _negate_nnf(left),
+                _negate_nnf(right),
+            )
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -482,55 +615,59 @@ def _try_distribution(
 def _merge_interval_operators(
     operands: list[Expression], is_and: bool
 ) -> list[Expression]:
-    operands = _merge_windows(operands, Restrict, is_and)
-    operands = _merge_windows(operands, Guard, is_and)
+    operands = _merge_windows(operands, RestrictiveSelection, is_and)
+    operands = _merge_windows(operands, VacuousSelection, is_and)
     if is_and:
-        return _merge_forall(operands)
-    return _merge_exists(operands)
+        return _merge_universal_conditions(operands)
+    return _merge_existential_conditions(operands)
 
 
 def _merge_temporal_operators(
     operands: list[Expression], is_and: bool
 ) -> list[Expression]:
     others = [
-        item for item in operands if not isinstance(item, (Hold, Eventually))
+        item
+        for item in operands
+        if not isinstance(item, Eventually) or item.delta is None
     ]
-    holds = [item for item in operands if isinstance(item, Hold)]
-    eventualities = [item for item in operands if isinstance(item, Eventually)]
+    eventualities = [
+        item
+        for item in operands
+        if isinstance(item, Eventually) and item.delta is not None
+    ]
 
-    for body, group in _group_by(holds, lambda item: item.body):
-        deltas = [item.delta for item in group]
-        others.append(Hold(max(deltas) if is_and else min(deltas), body))
     for body, group in _group_by(eventualities, lambda item: item.body):
         deltas = [item.delta for item in group]
         others.append(Eventually(min(deltas) if is_and else max(deltas), body))
     return others
 
 
-def _contains_incompatible_holds(operands: list[Expression]) -> bool:
-    holds = [item for item in operands if isinstance(item, Hold)]
-    return any(
-        _negate_nnf(left.body) == right.body
-        for index, left in enumerate(holds)
-        for right in holds[index + 1 :]
-    )
-
-
-def _apply_quantifier_implication(
+def _apply_condition_implication(
     operands: list[Expression],
     is_and: bool,
     universe: P.Interval | None,
 ) -> list[Expression]:
     if universe is None:
         return operands
-    universals = [item for item in operands if isinstance(item, ForAll)]
-    existentials = [item for item in operands if isinstance(item, Exists)]
+    universals = [
+        item
+        for item in operands
+        if isinstance(item, UniversalCondition)
+        and isinstance(item.interval, P.Interval)
+    ]
+    existentials = [
+        item
+        for item in operands
+        if isinstance(item, ExistentialCondition)
+        and isinstance(item.interval, P.Interval)
+    ]
     if is_and:
         return [
             item
             for item in operands
             if not (
-                isinstance(item, Exists)
+                isinstance(item, ExistentialCondition)
+                and isinstance(item.interval, P.Interval)
                 and any(
                     universal.body == item.body
                     and not (universal.interval & item.interval & universe).empty
@@ -542,7 +679,8 @@ def _apply_quantifier_implication(
         item
         for item in operands
         if not (
-            isinstance(item, ForAll)
+            isinstance(item, UniversalCondition)
+            and isinstance(item.interval, P.Interval)
             and any(
                 existential.body == item.body
                 and not (item.interval & existential.interval & universe).empty
@@ -554,11 +692,20 @@ def _apply_quantifier_implication(
 
 def _merge_windows(
     operands: list[Expression],
-    window_type: type[Restrict] | type[Guard],
+    window_type: type[RestrictiveSelection] | type[VacuousSelection],
     is_and: bool,
 ) -> list[Expression]:
-    others = [item for item in operands if not isinstance(item, window_type)]
-    windows = [item for item in operands if isinstance(item, window_type)]
+    others = [
+        item
+        for item in operands
+        if not isinstance(item, window_type)
+        or not isinstance(item.interval, P.Interval)
+    ]
+    windows = [
+        item
+        for item in operands
+        if isinstance(item, window_type) and isinstance(item.interval, P.Interval)
+    ]
     body_operator: type[And] | type[Or] = And if is_and else Or
 
     by_interval = _group_by(windows, lambda item: item.interval)
@@ -573,43 +720,70 @@ def _merge_windows(
     by_body = _group_by(combined, lambda item: item.body)
     for body, group in by_body:
         intervals = [item.interval for item in group]
-        if window_type is Restrict:
+        if window_type is RestrictiveSelection:
             interval = _intersection(intervals) if is_and else _union(intervals)
         else:
             interval = _union(intervals) if is_and else _intersection(intervals)
-        others.append(window_type(interval, body))
+        if _is_connected_or_empty(interval):
+            others.append(window_type(interval, body))
+        else:
+            others.extend(group)
     return others
 
 
-def _merge_forall(operands: list[Expression]) -> list[Expression]:
-    others = [item for item in operands if not isinstance(item, ForAll)]
-    quantified = [item for item in operands if isinstance(item, ForAll)]
-    by_interval = _group_by(quantified, lambda item: item.interval)
+def _merge_universal_conditions(operands: list[Expression]) -> list[Expression]:
+    others = [
+        item
+        for item in operands
+        if not isinstance(item, UniversalCondition)
+        or not isinstance(item.interval, P.Interval)
+    ]
+    conditions = [
+        item
+        for item in operands
+        if isinstance(item, UniversalCondition)
+        and isinstance(item.interval, P.Interval)
+    ]
+    by_interval = _group_by(conditions, lambda item: item.interval)
     combined = [
-        ForAll(interval, _make_variadic(And, [item.body for item in group]))
+        UniversalCondition(interval, _make_variadic(And, [item.body for item in group]))
         for interval, group in by_interval
     ]
     by_body = _group_by(combined, lambda item: item.body)
-    others.extend(
-        ForAll(_union(item.interval for item in group), body)
-        for body, group in by_body
-    )
+    for body, group in by_body:
+        interval = _union(item.interval for item in group)
+        if _is_connected_or_empty(interval):
+            others.append(UniversalCondition(interval, body))
+        else:
+            others.extend(group)
     return others
 
 
-def _merge_exists(operands: list[Expression]) -> list[Expression]:
-    others = [item for item in operands if not isinstance(item, Exists)]
-    quantified = [item for item in operands if isinstance(item, Exists)]
-    by_interval = _group_by(quantified, lambda item: item.interval)
+def _merge_existential_conditions(operands: list[Expression]) -> list[Expression]:
+    others = [
+        item
+        for item in operands
+        if not isinstance(item, ExistentialCondition)
+        or not isinstance(item.interval, P.Interval)
+    ]
+    conditions = [
+        item
+        for item in operands
+        if isinstance(item, ExistentialCondition)
+        and isinstance(item.interval, P.Interval)
+    ]
+    by_interval = _group_by(conditions, lambda item: item.interval)
     combined = [
-        Exists(interval, _make_variadic(Or, [item.body for item in group]))
+        ExistentialCondition(interval, _make_variadic(Or, [item.body for item in group]))
         for interval, group in by_interval
     ]
     by_body = _group_by(combined, lambda item: item.body)
-    others.extend(
-        Exists(_union(item.interval for item in group), body)
-        for body, group in by_body
-    )
+    for body, group in by_body:
+        interval = _union(item.interval for item in group)
+        if _is_connected_or_empty(interval):
+            others.append(ExistentialCondition(interval, body))
+        else:
+            others.extend(group)
     return others
 
 
@@ -619,7 +793,7 @@ def _try_interval_decomposition(
     universe: P.Interval | None,
     max_nodes: int,
 ) -> Expression | None:
-    intervals = _collect_quantifier_intervals(expression)
+    intervals = _collect_condition_intervals(expression)
     if len(intervals) < 2 and all(len(list(interval)) < 2 for interval in intervals):
         return None
     if expression.node_count >= max_nodes:
@@ -629,7 +803,7 @@ def _try_interval_decomposition(
 
     cells = _partition(intervals)
     try:
-        candidate = _decompose_quantifiers(expression, cells, max_nodes)
+        candidate = _decompose_conditions(expression, cells, max_nodes)
     except _CandidateTooLarge:
         return None
     if candidate == expression or candidate.node_count > max_nodes:
@@ -643,16 +817,20 @@ def _try_interval_decomposition(
     return simplified if simplified.node_count < expression.node_count else None
 
 
-def _collect_quantifier_intervals(expression: Expression) -> list[P.Interval]:
+def _collect_condition_intervals(expression: Expression) -> list[P.Interval]:
     intervals: list[P.Interval] = []
-    if isinstance(expression, (ForAll, Exists)) and not expression.interval.empty:
+    if (
+        isinstance(expression, (UniversalCondition, ExistentialCondition))
+        and isinstance(expression.interval, P.Interval)
+        and not expression.interval.empty
+    ):
         intervals.append(expression.interval)
     for child in expression.children:
-        intervals.extend(_collect_quantifier_intervals(child))
+        intervals.extend(_collect_condition_intervals(child))
     return intervals
 
 
-def _decompose_quantifiers(
+def _decompose_conditions(
     expression: Expression,
     cells: tuple[P.Interval, ...],
     max_nodes: int,
@@ -660,23 +838,27 @@ def _decompose_quantifiers(
     if not expression.children:
         return expression
     children = tuple(
-        _decompose_quantifiers(child, cells, max_nodes)
+        _decompose_conditions(child, cells, max_nodes)
         for child in expression.children
     )
-    if isinstance(expression, ForAll):
+    if isinstance(expression, UniversalCondition) and isinstance(
+        expression.interval, P.Interval
+    ):
         selected = [cell for cell in cells if (cell - expression.interval).empty]
         _check_candidate_size(len(selected), children[0], max_nodes)
         result = _make_variadic(
             And,
-            [ForAll(cell, children[0]) for cell in selected],
+            [UniversalCondition(cell, children[0]) for cell in selected],
         )
         return result
-    if isinstance(expression, Exists):
+    if isinstance(expression, ExistentialCondition) and isinstance(
+        expression.interval, P.Interval
+    ):
         selected = [cell for cell in cells if (cell - expression.interval).empty]
         _check_candidate_size(len(selected), children[0], max_nodes)
         result = _make_variadic(
             Or,
-            [Exists(cell, children[0]) for cell in selected],
+            [ExistentialCondition(cell, children[0]) for cell in selected],
         )
         return result
     if isinstance(expression, And):
@@ -750,6 +932,10 @@ def _union(intervals) -> P.Interval:
     for interval in intervals:
         result |= interval
     return result
+
+
+def _is_connected_or_empty(interval: P.Interval) -> bool:
+    return len(list(interval)) <= 1
 
 
 def _intersection(intervals) -> P.Interval:

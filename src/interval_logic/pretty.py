@@ -4,25 +4,29 @@ from dataclasses import dataclass
 
 from .ast import (
     And,
-    Atom,
+    Proposition,
     Bool,
     DerivedExpression,
     Equal,
     Eventually,
-    Exists,
+    ExistentialCondition,
     Expression,
-    ForAll,
-    Guard,
-    Hold,
-    Natural,
+    Release,
+    Selection,
+    Until,
+    UniversalCondition,
+    VacuousSelection,
+    WeakUntil,
+    NaturalLiteral,
     Not,
     Or,
-    Restrict,
+    RestrictiveSelection,
     Signal,
     Term,
     _coerce_expression,
 )
 from .derived import Equivalent, Implies, Xor
+from .temporal import DEFAULT_TEMPORAL_PARAMETER, format_temporal_parameter
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +38,8 @@ class _Symbols:
     or_: str
     forall: str
     exists: str
+    selection_left: str
+    selection_right: str
     implies: str
     equivalent: str
     xor: str
@@ -42,7 +48,7 @@ class _Symbols:
 
 
 _UNICODE = _Symbols(
-    "⊤", "⊥", "¬", " ∧ ", " ∨ ", "∀", "∃", " → ", " ↔ ", " ⊕ ", " = ", " ≠ "
+    "⊤", "⊥", "¬", " ∧ ", " ∨ ", "□", "◇", "⟨", "⟩", " → ", " ↔ ", " ⊕ ", " = ", " ≠ "
 )
 _ASCII = _Symbols(
     "true",
@@ -52,6 +58,8 @@ _ASCII = _Symbols(
     " | ",
     "forall",
     "exists",
+    "<",
+    ">",
     " -> ",
     " <-> ",
     " xor ",
@@ -59,14 +67,14 @@ _ASCII = _Symbols(
     " != ",
 )
 
-_QUANTIFIER = 10
 _EQUIVALENT = 20
 _IMPLIES = 30
 _XOR = 40
 _OR = 50
 _AND = 60
+_TEMPORAL = 65
 _NOT = 70
-_ATOM = 80
+_PRIMARY = 80
 
 
 def format_expression(expression: Expression | str, *, unicode: bool = True) -> str:
@@ -81,10 +89,10 @@ def format_term(term: Term) -> str:
     """Format a natural-number term."""
 
     match term:
-        case Natural(value=value):
+        case NaturalLiteral(value=value):
             return str(value)
         case Signal(name=name):
-            return _format_atom(name)
+            return _format_name(name)
         case _:
             raise TypeError("term must be a Term")
 
@@ -101,8 +109,8 @@ def _format(
             text = symbols.true
         case Bool(value=False):
             text = symbols.false
-        case Atom(name=name):
-            text = _format_atom(name)
+        case Proposition(name=name):
+            text = _format_name(name)
         case Equal(left=left, right=right):
             text = format_term(left) + symbols.equal + format_term(right)
         case Not(operand=Equal(left=left, right=right)):
@@ -120,18 +128,51 @@ def _format(
             text = symbols.false
         case Or(operands=operands):
             text = symbols.or_.join(_format(item, symbols, _OR) for item in operands)
-        case Restrict(interval=interval, body=body):
-            text = f"{interval}_({_format(body, symbols, 0)})"
-        case Guard(interval=interval, body=body):
-            text = f"{interval}^({_format(body, symbols, 0)})"
-        case ForAll(interval=interval, body=body):
-            text = f"{symbols.forall}{interval}: {_format(body, symbols, 0)}"
-        case Exists(interval=interval, body=body):
-            text = f"{symbols.exists}{interval}: {_format(body, symbols, 0)}"
-        case Hold(delta=delta, body=body):
-            text = f"H^{_format_delta(delta)} {_format(body, symbols, _NOT)}"
-        case Eventually(delta=delta, body=body):
-            text = f"F^{_format_delta(delta)} {_format(body, symbols, _NOT)}"
+        case RestrictiveSelection(interval=interval, body=body):
+            text = (
+                f"{symbols.selection_left}{_format(body, symbols, 0)}"
+                f"{symbols.selection_right}*{_parameter_suffix(interval)}"
+            )
+        case VacuousSelection(interval=interval, body=body):
+            text = (
+                f"{symbols.selection_left}{_format(body, symbols, 0)}"
+                f"{symbols.selection_right}{_parameter_suffix(interval)}"
+            )
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            text = (
+                f"{symbols.selection_left}{_format(inside, symbols, 0)}, "
+                f"{_format(outside, symbols, 0)}{symbols.selection_right}"
+                f"{_parameter_suffix(parameter)}"
+            )
+        case UniversalCondition(interval=interval, body=body):
+            operator = "□" if symbols is _UNICODE else "always"
+            text = f"{operator}{_parameter_suffix(interval)} {_format(body, symbols, _NOT)}"
+        case ExistentialCondition(interval=interval, body=body):
+            operator = "◇" if symbols is _UNICODE else "eventually"
+            text = f"{operator}{_parameter_suffix(interval)} {_format(body, symbols, _NOT)}"
+        case Eventually(parameter=parameter, body=body):
+            if expression.delta is not None:
+                text = f"F^{_format_delta(expression.delta)} {_format(body, symbols, _NOT)}"
+            else:
+                text = f"F{_parameter_suffix(parameter)} {_format(body, symbols, _NOT)}"
+        case Until(parameter=parameter, left=left, right=right):
+            text = (
+                _format(left, symbols, _TEMPORAL + 1)
+                + f" U{_parameter_suffix(parameter)} "
+                + _format(right, symbols, _TEMPORAL)
+            )
+        case WeakUntil(parameter=parameter, left=left, right=right):
+            text = (
+                _format(left, symbols, _TEMPORAL + 1)
+                + f" W{_parameter_suffix(parameter)} "
+                + _format(right, symbols, _TEMPORAL)
+            )
+        case Release(parameter=parameter, left=left, right=right):
+            text = (
+                _format(left, symbols, _TEMPORAL + 1)
+                + f" R{_parameter_suffix(parameter)} "
+                + _format(right, symbols, _TEMPORAL)
+            )
         case Implies(left=left, right=right):
             text = (
                 _format(left, symbols, _IMPLIES + 1)
@@ -161,8 +202,6 @@ def _format(
 
 def _precedence(expression: Expression) -> int:
     match expression:
-        case ForAll() | Exists():
-            return _QUANTIFIER
         case Equivalent():
             return _EQUIVALENT
         case Implies():
@@ -171,18 +210,27 @@ def _precedence(expression: Expression) -> int:
             return _XOR
         case Or():
             return _OR
+        case Until() | WeakUntil() | Release():
+            return _TEMPORAL
         case And():
             return _AND
-        case Not() | Hold() | Eventually():
+        case Not() | Eventually() | UniversalCondition() | ExistentialCondition():
             return _NOT
-        case Bool() | Atom() | Equal() | Restrict() | Guard() | DerivedExpression():
-            return _ATOM
+        case Bool() | Proposition() | Equal() | RestrictiveSelection() | VacuousSelection() | Selection() | DerivedExpression():
+            return _PRIMARY
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
 
-def _format_atom(name: str) -> str:
-    if name.isidentifier() and name not in {"true", "false", "forall", "exists"}:
+def _format_name(name: str) -> str:
+    if name.isidentifier() and name not in {
+        "true",
+        "false",
+        "forall",
+        "exists",
+        "always",
+        "eventually",
+    }:
         return name
     escaped = name.replace("\\", "\\\\").replace("`", "\\`")
     return f"`{escaped}`"
@@ -191,3 +239,9 @@ def _format_atom(name: str) -> str:
 def _format_delta(delta: float) -> str:
     text = repr(delta)
     return text[:-2] if text.endswith(".0") else text
+
+
+def _parameter_suffix(parameter) -> str:
+    if parameter == DEFAULT_TEMPORAL_PARAMETER:
+        return ""
+    return "_" + format_temporal_parameter(parameter)

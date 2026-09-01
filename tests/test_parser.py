@@ -5,19 +5,19 @@ import portion as P
 
 from interval_logic import (
     And,
-    Atom,
+    Proposition,
     Bool,
     Equal,
     Equivalent,
-    Exists,
-    ForAll,
-    Guard,
+    ExistentialCondition,
+    UniversalCondition,
+    VacuousSelection,
     Implies,
-    Natural,
+    NaturalLiteral,
     Not,
     Or,
     ParseError,
-    Restrict,
+    RestrictiveSelection,
     Signal,
     Xor,
     format_expression,
@@ -28,16 +28,16 @@ from interval_logic import (
 
 class ParserTests(unittest.TestCase):
     def test_expression_slots_parse_string_inputs(self):
-        p, q, r = Atom("p"), Atom("q"), Atom("r")
+        p, q, r = Proposition("p"), Proposition("q"), Proposition("r")
 
         self.assertEqual(il.as_expr("p | q"), Or((p, q)))
         self.assertEqual(Not("p & q"), Not(And((p, q))))
         self.assertEqual(And(("p", "q | r")), And((p, Or((q, r)))))
         self.assertEqual(Or(("p", "q & r")), Or((p, And((q, r)))))
-        self.assertEqual(Restrict("[0,1]", "p | q"), Restrict("[0,1]", Or((p, q))))
-        self.assertEqual(Guard("[0,1]", "p & q"), Guard("[0,1]", And((p, q))))
-        self.assertEqual(ForAll("[0,1]", "p -> q"), ForAll("[0,1]", Implies(p, q)))
-        self.assertEqual(Exists("[0,1]", "p xor q"), Exists("[0,1]", Xor(p, q)))
+        self.assertEqual(RestrictiveSelection("[0,1]", "p | q"), RestrictiveSelection("[0,1]", Or((p, q))))
+        self.assertEqual(VacuousSelection("[0,1]", "p & q"), VacuousSelection("[0,1]", And((p, q))))
+        self.assertEqual(UniversalCondition("[0,1]", "p -> q"), UniversalCondition("[0,1]", Implies(p, q)))
+        self.assertEqual(ExistentialCondition("[0,1]", "p xor q"), ExistentialCondition("[0,1]", Xor(p, q)))
         self.assertEqual(Implies("p & q", "r"), Implies(And((p, q)), r))
         self.assertEqual(Equivalent("p", "q"), Equivalent(p, q))
         self.assertEqual(Xor("p", "q"), Xor(p, q))
@@ -45,7 +45,7 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("q | r" & p, And((Or((q, r)), p)))
 
     def test_public_expression_apis_parse_string_inputs(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         universe = P.closed(0, 2)
         valuation = {"p": P.closed(0, 1), "q": P.closed(1, 2)}
 
@@ -59,15 +59,15 @@ class ParserTests(unittest.TestCase):
             il.partition_intervals("(forall[0,1]: p) & (forall[1,2]: q)"),
             And,
         )
-        self.assertEqual(il.denote("p & q", valuation, universe), P.singleton(1))
-        self.assertTrue(il.holds("p | q", valuation, 0, universe))
+        self.assertEqual(il.satisfying_anchors("p & q", valuation, universe), P.singleton(1))
+        self.assertTrue(il.satisfies("p | q", valuation, 0, universe))
         self.assertEqual(il.timeline("p", valuation, universe).expression, p)
         self.assertEqual(p.replace(lambda _expression: "q"), q)
 
     def test_ascii_and_unicode_operators_construct_the_same_expression(self):
         expected = Equivalent(
-            Implies(And((Atom("p"), Not(Atom("q")))), Atom("r")),
-            Xor(Atom("s"), Bool(False)),
+            Implies(And((Proposition("p"), Not(Proposition("q")))), Proposition("r")),
+            Xor(Proposition("s"), Bool(False)),
         )
 
         self.assertEqual(parse("(p & !q -> r) <-> s xor false"), expected)
@@ -77,66 +77,78 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(
             parse("p | q & r -> s -> t"),
             Implies(
-                Or((Atom("p"), And((Atom("q"), Atom("r"))))),
-                Implies(Atom("s"), Atom("t")),
+                Or((Proposition("p"), And((Proposition("q"), Proposition("r"))))),
+                Implies(Proposition("s"), Proposition("t")),
             ),
         )
         self.assertEqual(
-            parse("p & q & r"), And((Atom("p"), Atom("q"), Atom("r")))
+            parse("p & q & r"), And((Proposition("p"), Proposition("q"), Proposition("r")))
         )
         self.assertEqual(
-            parse("p | q | r"), Or((Atom("p"), Atom("q"), Atom("r")))
+            parse("p | q | r"), Or((Proposition("p"), Proposition("q"), Proposition("r")))
         )
 
-    def test_quantifiers_parse_full_scope_and_can_be_nested(self):
+    def test_conditions_parse_full_scope_and_can_be_nested(self):
         self.assertEqual(
             parse("forall[0, 1): p | (exists(2, 3]: q & r)"),
-            ForAll(
+            UniversalCondition(
                 P.closedopen(0.0, 1.0),
                 Or(
                     (
-                        Atom("p"),
-                        Exists(
+                        Proposition("p"),
+                        ExistentialCondition(
                             P.openclosed(2.0, 3.0),
-                            And((Atom("q"), Atom("r"))),
+                            And((Proposition("q"), Proposition("r"))),
                         ),
                     )
                 ),
             ),
         )
 
-    def test_restrict_and_guard_support_all_portion_interval_shapes(self):
-        disconnected = P.closedopen(0.0, 1.0) | P.openclosed(2.5, 3.0)
-
+    def test_selections_support_connected_and_empty_intervals(self):
         self.assertEqual(
-            parse("[0,1) | (2.5,3]_(p | q)"),
-            Restrict(disconnected, Or((Atom("p"), Atom("q")))),
+            parse("[0,1)_(p | q)"),
+            RestrictiveSelection(
+                P.closedopen(0.0, 1.0),
+                Or((Proposition("p"), Proposition("q"))),
+            ),
         )
         self.assertEqual(
             parse("(-inf,+inf)^(p)"),
-            Guard(P.open(-P.inf, P.inf), Atom("p")),
+            VacuousSelection(P.open(-P.inf, P.inf), Proposition("p")),
         )
-        self.assertEqual(parse("()_(p)"), Restrict(P.empty(), Atom("p")))
+        self.assertEqual(parse("()_(p)"), RestrictiveSelection(P.empty(), Proposition("p")))
+    def test_absolute_parameters_reject_disconnected_intervals(self):
+        sources = (
+            "[0,1) | (2.5,3]_(p | q)",
+            "[0,1) | (2.5,3]^(p | q)",
+            "forall[0,1) | (2.5,3]: p | q",
+            "exists[0,1) | (2.5,3]: p | q",
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ParseError, "must be connected"):
+                    parse(source)
 
-    def test_equalities_distinguish_signals_from_atoms_and_naturals(self):
-        self.assertEqual(parse("j_1 = 17"), Equal(Signal("j_1"), Natural(17)))
+    def test_equalities_distinguish_signals_from_propositions_and_naturals(self):
+        self.assertEqual(parse("j_1 = 17"), Equal(Signal("j_1"), NaturalLiteral(17)))
         self.assertEqual(
             parse("`charging point 2` != j_1"),
             Not(Equal(Signal("charging point 2"), Signal("j_1"))),
         )
-        self.assertEqual(parse("0 = 1"), Equal(Natural(0), Natural(1)))
+        self.assertEqual(parse("0 = 1"), Equal(NaturalLiteral(0), NaturalLiteral(1)))
 
     def test_quoted_names_unescape_backticks_and_backslashes(self):
-        expression = Atom("path `A` \\ ready")
+        expression = Proposition("path `A` \\ ready")
         rendered = format_expression(expression, unicode=False)
 
         self.assertEqual(parse(rendered), expression)
-        self.assertEqual(parse("`true`"), Atom("true"))
-        self.assertEqual(str(Atom("forall")), "`forall`")
+        self.assertEqual(parse("`true`"), Proposition("true"))
+        self.assertEqual(str(Proposition("forall")), "`forall`")
 
     def test_formatter_output_round_trips_for_builtin_nodes(self):
-        p, q = Atom("p"), Atom("name with spaces")
-        equality = Not(Equal(Signal("j"), Natural(0)))
+        p, q = Proposition("p"), Proposition("name with spaces")
+        equality = Not(Equal(Signal("j"), NaturalLiteral(0)))
         expressions = (
             Bool(True),
             Bool(False),
@@ -146,10 +158,10 @@ class ParserTests(unittest.TestCase):
             Not(Not(equality)),
             And((p, Not(q), equality)),
             Or((p, And((q, equality)))),
-            Restrict(P.closedopen(0, 1), Or((p, q))),
-            Guard(P.open(-P.inf, P.inf), p),
-            ForAll(P.closed(0, 1), Implies(p, q)),
-            Exists(P.empty(), Xor(p, q)),
+            RestrictiveSelection(P.closedopen(0, 1), Or((p, q))),
+            VacuousSelection(P.open(-P.inf, P.inf), p),
+            UniversalCondition(P.closed(0, 1), Implies(p, q)),
+            ExistentialCondition(P.empty(), Xor(p, q)),
             Implies(Implies(p, q), p),
             Equivalent(p, Xor(q, p)),
         )
@@ -163,7 +175,7 @@ class ParserTests(unittest.TestCase):
     def test_whitespace_is_ignored_between_tokens(self):
         self.assertEqual(
             parse(" \n forall [0,1] : ( p\t&\nq ) "),
-            ForAll(P.closed(0.0, 1.0), And((Atom("p"), Atom("q")))),
+            UniversalCondition(P.closed(0.0, 1.0), And((Proposition("p"), Proposition("q")))),
         )
 
     def test_parse_errors_include_stable_source_location(self):

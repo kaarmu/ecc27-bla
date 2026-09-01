@@ -7,30 +7,30 @@ import portion as P
 
 from interval_logic import (
     And,
-    Atom,
+    Proposition,
     Bool,
     DerivedExpression,
     DerivedExpressionCycleError,
     DerivedExpressionError,
     Equal,
     Equivalent,
-    Exists,
+    ExistentialCondition,
     ExpansionLimitError,
-    ForAll,
-    Guard,
+    UniversalCondition,
+    VacuousSelection,
     Implies,
-    Natural,
+    NaturalLiteral,
     NaturalSignal,
     Not,
     Or,
-    Restrict,
+    RestrictiveSelection,
     Signal,
     Xor,
     as_expr,
     as_term,
-    denote,
+    satisfying_anchors,
     format_expression,
-    holds,
+    satisfies,
     lower_derived,
     partition_intervals,
     simplify,
@@ -51,7 +51,7 @@ def finite_oracle(expression, valuation, at, signals=None):
     match expression:
         case Bool(value=value):
             return value
-        case Atom(name=name):
+        case Proposition(name=name):
             return at in valuation[name]
         case Equal(left=left, right=right):
             return finite_term(left, signals, at) == finite_term(right, signals, at)
@@ -61,17 +61,17 @@ def finite_oracle(expression, valuation, at, signals=None):
             return all(finite_oracle(item, valuation, at, signals) for item in operands)
         case Or(operands=operands):
             return any(finite_oracle(item, valuation, at, signals) for item in operands)
-        case Restrict(interval=interval, body=body):
+        case RestrictiveSelection(interval=interval, body=body):
             return at in interval and finite_oracle(body, valuation, at, signals)
-        case Guard(interval=interval, body=body):
+        case VacuousSelection(interval=interval, body=body):
             return at not in interval or finite_oracle(body, valuation, at, signals)
-        case ForAll(interval=interval, body=body):
+        case UniversalCondition(interval=interval, body=body):
             return all(
                 finite_oracle(body, valuation, point, signals)
                 for point in POINTS
                 if point in interval
             )
-        case Exists(interval=interval, body=body):
+        case ExistentialCondition(interval=interval, body=body):
             return any(
                 finite_oracle(body, valuation, point, signals)
                 for point in POINTS
@@ -83,7 +83,7 @@ def finite_oracle(expression, valuation, at, signals=None):
 
 def finite_term(term, signals, at):
     match term:
-        case Natural(value=value):
+        case NaturalLiteral(value=value):
             return value
         case Signal(name=name):
             return signals[name][at]
@@ -116,8 +116,8 @@ def natural_signal_from_points(values):
 
 class ConstructionTests(unittest.TestCase):
     def test_nodes_are_structurally_equal_hashable_and_immutable(self):
-        left = And((Atom("p"), Atom("q")))
-        right = And((Atom("p"), Atom("q")))
+        left = And((Proposition("p"), Proposition("q")))
+        right = And((Proposition("p"), Proposition("q")))
 
         self.assertEqual(left, right)
         self.assertEqual(hash(left), hash(right))
@@ -125,75 +125,77 @@ class ConstructionTests(unittest.TestCase):
             left.operands = ()
 
     def test_depth_and_node_count_include_all_descendants(self):
-        expression = Not(And((Atom("p"), Not(Atom("q")))))
+        expression = Not(And((Proposition("p"), Not(Proposition("q")))))
 
         self.assertEqual(expression.depth, 4)
         self.assertEqual(expression.node_count, 5)
 
     def test_python_operators_and_boolean_coercion_construct_formulas(self):
-        p = Atom("p")
+        p = Proposition("p")
 
         self.assertEqual(~p, Not(p))
         self.assertEqual(p & True, And((p, Bool(True))))
         self.assertEqual(False | p, Or((Bool(False), p)))
         self.assertEqual(as_expr(True), Bool(True))
 
-    def test_fluent_window_methods_construct_immutable_nodes(self):
-        p = Atom("p")
-        interval = P.closed(0, 1)
-
-        self.assertEqual(p.restrict(interval), Restrict(interval, p))
-        self.assertEqual(p.guard(interval), Guard(interval, p))
-        self.assertEqual(hash(p.restrict(interval)), hash(Restrict(interval, p)))
-
     def test_interval_expressions_parse_string_arguments_as_floats(self):
-        p = Atom("p")
-        expected = P.from_string("[0, 1) | (2.5, 3]", float)
+        p = Proposition("p")
+        expected = P.closedopen(0.0, 1.0)
 
-        for expression_type in (Restrict, Guard, ForAll, Exists):
+        for expression_type in (RestrictiveSelection, VacuousSelection, UniversalCondition, ExistentialCondition):
             with self.subTest(expression_type=expression_type.__name__):
-                expression = expression_type("[0, 1) | (2.5, 3]", p)
+                expression = expression_type("[0, 1)", p)
 
                 self.assertIsInstance(expression.interval, P.Interval)
                 self.assertEqual(expression.interval, expected)
                 self.assertIsInstance(next(iter(expression.interval)).lower, float)
 
-        self.assertEqual(p.restrict("[0, 1)"), Restrict(P.closedopen(0.0, 1.0), p))
-        self.assertEqual(p.guard("[0, 1)"), Guard(P.closedopen(0.0, 1.0), p))
+    def test_absolute_temporal_parameters_must_be_connected(self):
+        p = Proposition("p")
+        disconnected = P.closed(0, 1) | P.closed(3, 4)
+        for expression_type in (
+            RestrictiveSelection,
+            VacuousSelection,
+            UniversalCondition,
+            ExistentialCondition,
+        ):
+            with self.subTest(expression_type=expression_type.__name__):
+                with self.assertRaisesRegex(ValueError, "must be connected"):
+                    expression_type(disconnected, p)
 
     def test_natural_terms_and_equality_are_immutable_and_canonical(self):
         j1, j2 = Signal("j_1"), Signal("j_2")
 
-        self.assertEqual(as_term(0), Natural(0))
-        self.assertEqual(j1.equals(0), Equal(j1, Natural(0)))
+        self.assertEqual(as_term(0), NaturalLiteral(0))
+        self.assertEqual(j1.equals(0), Equal(j1, NaturalLiteral(0)))
         self.assertEqual(j1.not_equals(j2), Not(Equal(j1, j2)))
         self.assertEqual(Equal(j2, j1), Equal(j1, j2))
         self.assertEqual(hash(Equal(j2, j1)), hash(Equal(j1, j2)))
         self.assertEqual(Equal(1, 0), Equal(0, 1))
 
     def test_expression_has_no_python_truth_value(self):
-        with self.assertRaisesRegex(TypeError, "holds.*denote"):
-            bool(Atom("p"))
+        with self.assertRaisesRegex(TypeError, "satisfies.*satisfying_anchors"):
+            bool(Proposition("p"))
 
     def test_constructors_reject_invalid_values(self):
         with self.assertRaises(TypeError):
             Bool(1)
         with self.assertRaises(ValueError):
-            Atom("")
+            Proposition("")
         with self.assertRaises(TypeError):
             Not(True)
         with self.assertRaises(TypeError):
-            ForAll((0, 1), Atom("p"))
+            UniversalCondition((0, 1), Proposition("p"))
         with self.assertRaises(TypeError):
-            And((Atom("p"), True))
+            And((Proposition("p"), True))
         with self.assertRaises(TypeError):
-            Restrict((0, 1), Atom("p"))
+            RestrictiveSelection((0, 1), Proposition("p"))
         with self.assertRaises(TypeError):
-            Guard(P.closed(0, 1), True)
+            VacuousSelection(P.closed(0, 1), True)
         with self.assertRaises(TypeError):
-            Natural(True)
+            NaturalLiteral(True)
         with self.assertRaises(ValueError):
-            Natural(-1)
+            NaturalLiteral(-1)
         with self.assertRaises(ValueError):
             Signal("")
         with self.assertRaises(TypeError):
@@ -206,7 +208,7 @@ class ReplacementTests(unittest.TestCase):
     def test_matching_workflow_replaces_selected_equalities(self):
         keep = Signal("j").equals(1)
         negate = Signal("j").equals(2)
-        formula = And((keep, Exists("[0, 1]", negate)))
+        formula = And((keep, ExistentialCondition("[0, 1]", negate)))
 
         def rewrite(expression):
             if isinstance(expression, il.Equal):
@@ -215,11 +217,11 @@ class ReplacementTests(unittest.TestCase):
 
         self.assertEqual(
             formula.replace(rewrite),
-            And((keep, Exists("[0, 1]", Not(negate)))),
+            And((keep, ExistentialCondition("[0, 1]", Not(negate)))),
         )
 
     def test_replacement_rebuilds_every_core_parent_shape(self):
-        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+        p, q, replacement = Proposition("p"), Proposition("q"), Proposition("replacement")
         equality = Signal("j").equals(1)
         formula = And(
             (
@@ -227,10 +229,10 @@ class ReplacementTests(unittest.TestCase):
                 equality,
                 Not(p),
                 Or((p, q)),
-                Restrict("[0, 1]", p),
-                Guard("[1, 2]", p),
-                ForAll("[2, 3]", p),
-                Exists("[3, 4]", p),
+                RestrictiveSelection("[0, 1]", p),
+                VacuousSelection("[1, 2]", p),
+                UniversalCondition("[2, 3]", p),
+                ExistentialCondition("[3, 4]", p),
             )
         )
 
@@ -246,16 +248,16 @@ class ReplacementTests(unittest.TestCase):
                     equality,
                     Not(replacement),
                     Or((replacement, q)),
-                    Restrict("[0, 1]", replacement),
-                    Guard("[1, 2]", replacement),
-                    ForAll("[2, 3]", replacement),
-                    Exists("[3, 4]", replacement),
+                    RestrictiveSelection("[0, 1]", replacement),
+                    VacuousSelection("[1, 2]", replacement),
+                    UniversalCondition("[2, 3]", replacement),
+                    ExistentialCondition("[3, 4]", replacement),
                 )
             ),
         )
 
     def test_replacement_is_bottom_up_and_left_to_right(self):
-        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+        p, q, replacement = Proposition("p"), Proposition("q"), Proposition("replacement")
         visited = []
 
         def rewrite(expression):
@@ -272,7 +274,7 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(visited, [p, Not(replacement), q, expected])
 
     def test_callback_created_expression_is_not_revisited(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         visited = []
 
         def rewrite(expression):
@@ -297,12 +299,12 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(visited, [equality])
 
     def test_no_op_replacement_preserves_original_instances(self):
-        formula = Implies(Not(Atom("p")), Exists("[0, 1]", Atom("q")))
+        formula = Implies(Not(Proposition("p")), ExistentialCondition("[0, 1]", Proposition("q")))
 
         self.assertIs(formula.replace(lambda expression: expression), formula)
 
     def test_replacement_preserves_derived_expression_types(self):
-        p, q, replacement = Atom("p"), Atom("q"), Atom("replacement")
+        p, q, replacement = Proposition("p"), Proposition("q"), Proposition("replacement")
 
         def rewrite(expression):
             return replacement if expression is p else expression
@@ -320,7 +322,7 @@ class ReplacementTests(unittest.TestCase):
         self.assertEqual(configured_custom.children, (replacement,))
 
     def test_custom_derived_rebuild_failure_explains_required_hook(self):
-        p, replacement = Atom("p"), Atom("replacement")
+        p, replacement = Proposition("p"), Proposition("replacement")
 
         with self.assertRaisesRegex(TypeError, "override _with_children"):
             ConfiguredDerived("tag", p).replace(
@@ -328,7 +330,7 @@ class ReplacementTests(unittest.TestCase):
             )
 
     def test_replacement_validates_callback_and_its_result(self):
-        p = Atom("p")
+        p = Proposition("p")
 
         with self.assertRaisesRegex(TypeError, "must be callable"):
             p.replace(None)
@@ -342,13 +344,13 @@ class ReplacementTests(unittest.TestCase):
             raise error
 
         with self.assertRaises(RuntimeError) as caught:
-            Atom("p").replace(fail)
+            Proposition("p").replace(fail)
         self.assertIs(caught.exception, error)
 
 
 class PrettyPrintingTests(unittest.TestCase):
     def test_str_uses_compact_unicode_notation(self):
-        p, q, r = Atom("p"), Atom("q"), Atom("r")
+        p, q, r = Proposition("p"), Proposition("q"), Proposition("r")
 
         self.assertEqual(str(Bool(True)), "⊤")
         self.assertEqual(str(Bool(False)), "⊥")
@@ -356,33 +358,33 @@ class PrettyPrintingTests(unittest.TestCase):
         self.assertEqual(str(And((p, Or((q, r))))), "p ∧ (q ∨ r)")
         self.assertEqual(str(Or((And((p, q)), r))), "p ∧ q ∨ r")
 
-    def test_quantifiers_make_scope_explicit(self):
-        p, q = Atom("p"), Atom("q")
+    def test_conditions_make_scope_explicit(self):
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closedopen(0, 1)
 
-        self.assertEqual(str(ForAll(interval, Or((p, q)))), "∀[0,1): p ∨ q")
+        self.assertEqual(str(UniversalCondition(interval, Or((p, q)))), "□_[0,1) (p ∨ q)")
         self.assertEqual(
-            str(And((p, Exists(interval, q)))), "p ∧ (∃[0,1): q)"
+            str(And((p, ExistentialCondition(interval, q)))), "p ∧ ◇_[0,1) q"
         )
-        self.assertEqual(str(Not(ForAll(interval, p))), "¬(∀[0,1): p)")
+        self.assertEqual(str(Not(UniversalCondition(interval, p))), "¬□_[0,1) p")
 
     def test_derived_operator_precedence(self):
-        p, q, r = Atom("p"), Atom("q"), Atom("r")
+        p, q, r = Proposition("p"), Proposition("q"), Proposition("r")
 
         self.assertEqual(str(Implies(And((p, q)), r)), "p ∧ q → r")
         self.assertEqual(str(Implies(p, Implies(q, r))), "p → q → r")
         self.assertEqual(str(Implies(Implies(p, q), r)), "(p → q) → r")
         self.assertEqual(str(Equivalent(p, Xor(q, r))), "p ↔ q ⊕ r")
 
-    def test_ascii_output_and_quoted_atom_names(self):
-        expression = ForAll(
+    def test_ascii_output_and_quoted_proposition_names(self):
+        expression = UniversalCondition(
             P.closed(0, 1),
-            Implies(Atom("vehicle connected"), Not(Atom("fault"))),
+            Implies(Proposition("vehicle connected"), Not(Proposition("fault"))),
         )
 
         self.assertEqual(
             format_expression(expression, unicode=False),
-            "forall[0,1]: `vehicle connected` -> !fault",
+            "always_[0,1] (`vehicle connected` -> !fault)",
         )
 
     def test_numeric_equalities_use_formula_notation(self):
@@ -401,7 +403,7 @@ class PrettyPrintingTests(unittest.TestCase):
         )
 
     def test_repr_remains_unambiguous_debug_output(self):
-        expression = And((Atom("p"), Atom("q")))
+        expression = And((Proposition("p"), Proposition("q")))
 
         self.assertEqual(str(expression), "p ∧ q")
         self.assertIn("And(operands=", repr(expression))
@@ -409,32 +411,32 @@ class PrettyPrintingTests(unittest.TestCase):
     def test_ipython_pretty_output_uses_formula_notation(self):
         printer = RecordingPrinter()
 
-        And((Atom("p"), Atom("q")))._repr_pretty_(printer, cycle=False)
+        And((Proposition("p"), Proposition("q")))._repr_pretty_(printer, cycle=False)
 
         self.assertEqual(printer.value, "p ∧ q")
 
     def test_custom_derived_operator_has_readable_fallback(self):
-        self.assertEqual(str(Nand(Atom("p"), Atom("q"))), "Nand(p, q)")
+        self.assertEqual(str(Nand(Proposition("p"), Proposition("q"))), "Nand(p, q)")
 
     def test_windows_use_notebook_notation_with_explicit_scope(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closedopen(0, 1)
 
-        self.assertEqual(str(Restrict(interval, Or((p, q)))), "[0,1)_(p ∨ q)")
-        self.assertEqual(str(Guard(interval, And((p, q)))), "[0,1)^(p ∧ q)")
+        self.assertEqual(str(RestrictiveSelection(interval, Or((p, q)))), "⟨p ∨ q⟩*_[0,1)")
+        self.assertEqual(str(VacuousSelection(interval, And((p, q)))), "⟨p ∧ q⟩_[0,1)")
         self.assertEqual(
-            format_expression(Restrict(interval, Not(p)), unicode=False),
-            "[0,1)_(!p)",
+            format_expression(RestrictiveSelection(interval, Not(p)), unicode=False),
+            "<!p>*_[0,1)",
         )
         self.assertEqual(
-            str(Restrict(interval, Guard(P.closed(1, 2), p))),
-            "[0,1)_([1,2]^(p))",
+            str(RestrictiveSelection(interval, VacuousSelection(P.closed(1, 2), p))),
+            "⟨⟨p⟩_[1,2]⟩*_[0,1)",
         )
 
 
 class TimelineTests(unittest.TestCase):
     def test_timeline_contains_universe_valuation_and_formula_rows(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         valuation = {"q": P.closed(1, 3), "p": P.closedopen(0, 2)}
 
         result = timeline(And((p, q)), valuation, P.closed(0, 4))
@@ -446,18 +448,18 @@ class TimelineTests(unittest.TestCase):
 
     def test_timeline_plain_text_is_an_exact_interval_table(self):
         result = timeline(
-            Atom("p"), {"p": P.closed(1, 2)}, P.closed(0, 3), formula_label="result"
+            Proposition("p"), {"p": P.closed(1, 2)}, P.closed(0, 3), formula_label="result"
         )
 
         text = str(result)
-        self.assertIn("row       holds on", text)
+        self.assertIn("row       satisfying anchors", text)
         self.assertIn("Universe  [0,3]", text)
         self.assertIn("p         [1,2]", text)
         self.assertIn("result    [1,2]", text)
 
     def test_finite_numeric_timeline_renders_inline_svg_and_html_table(self):
         result = timeline(
-            Atom("<ready>"),
+            Proposition("<ready>"),
             {"<ready>": P.openclosed(1, 2)},
             P.closed(0, 3),
         )
@@ -470,7 +472,7 @@ class TimelineTests(unittest.TestCase):
         self.assertIn("#2e9d57", html)
 
     def test_unbounded_timeline_falls_back_to_exact_table(self):
-        result = timeline(Atom("p"), {"p": P.open(-P.inf, P.inf)}, P.open(-P.inf, P.inf))
+        result = timeline(Proposition("p"), {"p": P.open(-P.inf, P.inf)}, P.open(-P.inf, P.inf))
 
         html = result._repr_html_()
         self.assertNotIn("<svg", html)
@@ -479,16 +481,16 @@ class TimelineTests(unittest.TestCase):
 
     def test_timeline_validates_display_options(self):
         with self.assertRaises(ValueError):
-            timeline(Atom("p"), {"p": P.empty()}, UNIVERSE, width=200)
+            timeline(Proposition("p"), {"p": P.empty()}, UNIVERSE, width=200)
         with self.assertRaises(ValueError):
-            timeline(Atom("p"), {"p": P.empty()}, UNIVERSE, formula_label="")
+            timeline(Proposition("p"), {"p": P.empty()}, UNIVERSE, formula_label="")
 
     def test_timeline_visualizes_window_formula_denotation(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         expression = And(
             (
-                Restrict(P.closed(0, 1), p),
-                Guard(P.closed(0.5, 1.5), q),
+                RestrictiveSelection(P.closed(0, 1), p),
+                VacuousSelection(P.closed(0.5, 1.5), q),
             )
         )
         valuation = {"p": P.closed(0, 1), "q": P.closed(0.75, 1.5)}
@@ -499,7 +501,7 @@ class TimelineTests(unittest.TestCase):
             result.rows[-1].interval,
             P.closedopen(0, 0.5) | P.closed(0.75, 1),
         )
-        self.assertIn("[0,1]_(p)", result.rows[-1].label)
+        self.assertIn("⟨p⟩*_[0,1]", result.rows[-1].label)
         self.assertIn("<svg", result._repr_html_())
 
     def test_timeline_includes_piecewise_signal_values(self):
@@ -520,16 +522,24 @@ class TimelineTests(unittest.TestCase):
 
 
 class SemanticsTests(unittest.TestCase):
-    def test_atoms_are_clipped_to_universe_and_missing_atoms_fail(self):
-        p = Atom("p")
+    def test_propositions_are_clipped_to_universe_and_missing_propositions_fail(self):
+        p = Proposition("p")
 
         self.assertEqual(
-            denote(p, {"p": P.closed(-10, 10)}, UNIVERSE), UNIVERSE
+            satisfying_anchors(p, {"p": P.closed(-10, 10)}, UNIVERSE), UNIVERSE
         )
         with self.assertRaisesRegex(KeyError, "missing valuation.*p"):
-            denote(p, {}, UNIVERSE)
+            satisfying_anchors(p, {}, UNIVERSE)
         with self.assertRaises(TypeError):
-            denote(p, {"p": {0, 1}}, UNIVERSE)
+            satisfying_anchors(p, {"p": {0, 1}}, UNIVERSE)
+
+    def test_disconnected_valuations_and_evaluation_universes_are_supported(self):
+        p = Proposition("p")
+        universe = P.closed(0, 1) | P.closed(3, 4)
+        valuation = {"p": P.singleton(0) | P.singleton(4)}
+
+        self.assertEqual(satisfying_anchors(p, valuation, universe), valuation["p"])
+        self.assertTrue(satisfies(p, valuation, 4, universe))
 
     def test_natural_signals_validate_values_regions_and_coverage(self):
         with self.assertRaises(TypeError):
@@ -560,31 +570,31 @@ class SemanticsTests(unittest.TestCase):
             "j_2": NaturalSignal({7: P.closed(0, 1)}, default=0),
         }
 
-        self.assertEqual(denote(Equal(1, 1), {}, UNIVERSE), UNIVERSE)
-        self.assertEqual(denote(Equal(1, 2), {}, UNIVERSE), P.empty())
+        self.assertEqual(satisfying_anchors(Equal(1, 1), {}, UNIVERSE), UNIVERSE)
+        self.assertEqual(satisfying_anchors(Equal(1, 2), {}, UNIVERSE), P.empty())
         self.assertEqual(
-            denote(j1.equals(0), {}, UNIVERSE, signals=signals),
+            satisfying_anchors(j1.equals(0), {}, UNIVERSE, signals=signals),
             P.closedopen(-1, 0) | P.openclosed(0, 1),
         )
         self.assertEqual(
-            denote(j1.equals(j2), {}, UNIVERSE, signals=signals),
+            satisfying_anchors(j1.equals(j2), {}, UNIVERSE, signals=signals),
             P.closed(-1, 0),
         )
-        self.assertTrue(holds(j1.equals(7), {}, 0, UNIVERSE, signals=signals))
-        self.assertFalse(holds(j1.equals(7), {}, 1, UNIVERSE, signals=signals))
+        self.assertTrue(satisfies(j1.equals(7), {}, 0, UNIVERSE, signals=signals))
+        self.assertFalse(satisfies(j1.equals(7), {}, 1, UNIVERSE, signals=signals))
 
     def test_signal_evaluation_reports_missing_or_malformed_values(self):
         formula = Signal("j").equals(0)
 
         with self.assertRaisesRegex(KeyError, "missing valuation.*j"):
-            denote(formula, {}, UNIVERSE)
+            satisfying_anchors(formula, {}, UNIVERSE)
         with self.assertRaisesRegex(TypeError, "NaturalSignal"):
-            denote(formula, {}, UNIVERSE, signals={"j": P.closed(0, 1)})
+            satisfying_anchors(formula, {}, UNIVERSE, signals={"j": P.closed(0, 1)})
 
     def test_job_allocation_formula_detects_duplicate_nonzero_jobs(self):
         universe = P.closed(0, 2)
         j1, j2 = Signal("j_1"), Signal("j_2")
-        formula = ForAll(
+        formula = UniversalCondition(
             universe,
             j1.not_equals(j2) | (j1.equals(0) & j2.equals(0)),
         )
@@ -597,20 +607,21 @@ class SemanticsTests(unittest.TestCase):
             "j_2": NaturalSignal({6: P.closed(0.5, 1.5)}, default=0),
         }
 
-        self.assertEqual(denote(formula, {}, universe, signals=conflict), P.empty())
-        self.assertEqual(denote(formula, {}, universe, signals=no_conflict), universe)
+        self.assertEqual(satisfying_anchors(formula, {}, universe, signals=conflict), P.empty())
+        self.assertEqual(satisfying_anchors(formula, {}, universe, signals=no_conflict), universe)
 
     def test_equality_evaluator_agrees_with_independent_finite_oracle(self):
         discrete_universe = portion_from_points(POINTS)
         j1, j2 = Signal("j_1"), Signal("j_2")
+        allocation_safe = j1.not_equals(j2) | (j1.equals(0) & j2.equals(0))
         formulas = (
             j1.equals(0),
             j1.equals(j2),
             j1.not_equals(j2),
-            j1.not_equals(j2) | (j1.equals(0) & j2.equals(0)),
-            ForAll(
-                discrete_universe,
-                j1.not_equals(j2) | (j1.equals(0) & j2.equals(0)),
+            allocation_safe,
+            And(
+                UniversalCondition(P.singleton(point), allocation_safe)
+                for point in POINTS
             ),
         )
         value_sequences = tuple(itertools.product(range(3), repeat=len(POINTS)))
@@ -632,7 +643,7 @@ class SemanticsTests(unittest.TestCase):
                         at=point,
                     ):
                         self.assertEqual(
-                            holds(
+                            satisfies(
                                 formula,
                                 {},
                                 point,
@@ -643,124 +654,119 @@ class SemanticsTests(unittest.TestCase):
                         )
 
     def test_boolean_denotation_respects_open_and_closed_endpoints(self):
-        p = Atom("p")
+        p = Proposition("p")
         valuation = {"p": P.openclosed(0, 1)}
 
-        self.assertFalse(holds(p, valuation, 0, UNIVERSE))
-        self.assertTrue(holds(p, valuation, 1, UNIVERSE))
-        self.assertEqual(denote(Not(p), valuation, UNIVERSE), P.closed(-1, 0))
+        self.assertFalse(satisfies(p, valuation, 0, UNIVERSE))
+        self.assertTrue(satisfies(p, valuation, 1, UNIVERSE))
+        self.assertEqual(satisfying_anchors(Not(p), valuation, UNIVERSE), P.closed(-1, 0))
 
-    def test_empty_quantifiers_have_standard_vacuous_semantics(self):
-        p = Atom("p")
+    def test_empty_conditions_have_standard_vacuous_semantics(self):
+        p = Proposition("p")
 
-        self.assertEqual(denote(ForAll(P.empty(), p), {}, UNIVERSE), UNIVERSE)
-        self.assertTrue(denote(Exists(P.empty(), p), {}, UNIVERSE).empty)
+        self.assertEqual(satisfying_anchors(UniversalCondition(P.empty(), p), {}, UNIVERSE), UNIVERSE)
+        self.assertTrue(satisfying_anchors(ExistentialCondition(P.empty(), p), {}, UNIVERSE).empty)
 
-    def test_quantifier_intervals_are_restricted_to_universe(self):
-        p = Atom("p")
+    def test_condition_intervals_are_restricted_to_universe(self):
+        p = Proposition("p")
         outside_and_inside = P.closed(-100, 0)
 
         self.assertEqual(
-            denote(ForAll(outside_and_inside, p), {"p": P.closed(-1, 0)}, UNIVERSE),
+            satisfying_anchors(UniversalCondition(outside_and_inside, p), {"p": P.closed(-1, 0)}, UNIVERSE),
             UNIVERSE,
         )
         self.assertEqual(
-            denote(Exists(P.open(2, P.inf), p), {"p": UNIVERSE}, UNIVERSE),
+            satisfying_anchors(ExistentialCondition(P.open(2, P.inf), p), {"p": UNIVERSE}, UNIVERSE),
             P.empty(),
         )
 
-    def test_continuous_quantifier_semantics(self):
-        p = Atom("p")
+    def test_continuous_condition_semantics(self):
+        p = Proposition("p")
 
         self.assertEqual(
-            denote(ForAll(P.closed(0, 1), p), {"p": P.closed(0, 1)}, UNIVERSE),
+            satisfying_anchors(UniversalCondition(P.closed(0, 1), p), {"p": P.closed(0, 1)}, UNIVERSE),
             UNIVERSE,
         )
 
     def test_restrictive_and_guarded_window_denotations(self):
-        p = Atom("p")
+        p = Proposition("p")
         interval = P.closedopen(0, 1)
         valuation = {"p": P.openclosed(0, 2)}
 
         self.assertEqual(
-            denote(Restrict(interval, p), valuation, UNIVERSE), P.open(0, 1)
+            satisfying_anchors(RestrictiveSelection(interval, p), valuation, UNIVERSE), P.open(0, 1)
         )
         self.assertEqual(
-            denote(Guard(interval, p), valuation, UNIVERSE),
+            satisfying_anchors(VacuousSelection(interval, p), valuation, UNIVERSE),
             P.closedopen(-1, 0) | P.openclosed(0, 1),
         )
 
     def test_windows_clip_to_universe_and_short_circuit_empty_domains(self):
-        p = Atom("p")
+        p = Proposition("p")
         outside = P.open(2, P.inf)
 
-        self.assertEqual(denote(Restrict(outside, p), {}, UNIVERSE), P.empty())
-        self.assertEqual(denote(Guard(outside, p), {}, UNIVERSE), UNIVERSE)
-        self.assertEqual(denote(Restrict(P.empty(), p), {}, UNIVERSE), P.empty())
-        self.assertEqual(denote(Guard(P.empty(), p), {}, UNIVERSE), UNIVERSE)
+        self.assertEqual(satisfying_anchors(RestrictiveSelection(outside, p), {}, UNIVERSE), P.empty())
+        self.assertEqual(satisfying_anchors(VacuousSelection(outside, p), {}, UNIVERSE), UNIVERSE)
+        self.assertEqual(satisfying_anchors(RestrictiveSelection(P.empty(), p), {}, UNIVERSE), P.empty())
+        self.assertEqual(satisfying_anchors(VacuousSelection(P.empty(), p), {}, UNIVERSE), UNIVERSE)
 
-    def test_full_and_disconnected_windows(self):
-        p = Atom("p")
+    def test_full_window(self):
+        p = Proposition("p")
         all_time = P.open(-P.inf, P.inf)
-        disconnected = P.closed(-1, -0.5) | P.openclosed(0.5, 1)
         valuation = {"p": P.closed(-0.75, 0.75)}
 
-        self.assertEqual(denote(Restrict(all_time, p), valuation, UNIVERSE), valuation["p"])
-        self.assertEqual(denote(Guard(all_time, p), valuation, UNIVERSE), valuation["p"])
-        self.assertEqual(
-            denote(Restrict(disconnected, p), valuation, UNIVERSE),
-            P.closed(-0.75, -0.5) | P.openclosed(0.5, 0.75),
-        )
+        self.assertEqual(satisfying_anchors(RestrictiveSelection(all_time, p), valuation, UNIVERSE), valuation["p"])
+        self.assertEqual(satisfying_anchors(VacuousSelection(all_time, p), valuation, UNIVERSE), valuation["p"])
 
-    def test_window_duality_and_quantifier_definitions(self):
-        p = Atom("p")
+    def test_selection_duality_and_condition_definitions(self):
+        p = Proposition("p")
         interval = P.closed(0, 1)
         for values in all_valuations("p"):
             valuation = {"p": portion_from_points(values["p"])}
-            restricted = denote(Restrict(interval, p), valuation, UNIVERSE)
-            guarded = denote(Guard(interval, p), valuation, UNIVERSE)
+            restricted = satisfying_anchors(RestrictiveSelection(interval, p), valuation, UNIVERSE)
+            guarded = satisfying_anchors(VacuousSelection(interval, p), valuation, UNIVERSE)
 
             self.assertEqual(
-                denote(Not(Restrict(interval, p)), valuation, UNIVERSE),
-                denote(Guard(interval, Not(p)), valuation, UNIVERSE),
+                satisfying_anchors(Not(RestrictiveSelection(interval, p)), valuation, UNIVERSE),
+                satisfying_anchors(VacuousSelection(interval, Not(p)), valuation, UNIVERSE),
             )
             self.assertEqual(
-                denote(Not(Guard(interval, p)), valuation, UNIVERSE),
-                denote(Restrict(interval, Not(p)), valuation, UNIVERSE),
+                satisfying_anchors(Not(VacuousSelection(interval, p)), valuation, UNIVERSE),
+                satisfying_anchors(RestrictiveSelection(interval, Not(p)), valuation, UNIVERSE),
             )
             self.assertEqual(
-                denote(Exists(interval, p), valuation, UNIVERSE),
+                satisfying_anchors(ExistentialCondition(interval, p), valuation, UNIVERSE),
                 UNIVERSE if not restricted.empty else P.empty(),
             )
             self.assertEqual(
-                denote(ForAll(interval, p), valuation, UNIVERSE),
+                satisfying_anchors(UniversalCondition(interval, p), valuation, UNIVERSE),
                 UNIVERSE if guarded == UNIVERSE else P.empty(),
             )
         self.assertTrue(
-            denote(
-                ForAll(P.closed(0, 1), p),
+            satisfying_anchors(
+                UniversalCondition(P.closed(0, 1), p),
                 {"p": P.closedopen(0, 1)},
                 UNIVERSE,
             ).empty
         )
         self.assertEqual(
-            denote(Exists(P.open(0, 1), p), {"p": P.singleton(0.5)}, UNIVERSE),
+            satisfying_anchors(ExistentialCondition(P.open(0, 1), p), {"p": P.singleton(0.5)}, UNIVERSE),
             UNIVERSE,
         )
 
     def test_evaluator_agrees_with_independent_finite_oracle(self):
-        p, q = Atom("p"), Atom("q")
-        left_domain = portion_from_points((-1, 0))
-        right_domain = portion_from_points((0, 1))
+        p, q = Proposition("p"), Proposition("q")
+        left_domain = P.singleton(-1)
+        right_domain = P.singleton(1)
         formulas = (
             p,
             Not(p),
             And((p, q)),
             Or((Not(p), q)),
-            ForAll(left_domain, Or((p, q))),
-            Exists(right_domain, And((p, Not(q)))),
-            Restrict(left_domain, Or((p, q))),
-            Guard(right_domain, And((p, Not(q)))),
+            UniversalCondition(left_domain, Or((p, q))),
+            ExistentialCondition(right_domain, And((p, Not(q)))),
+            RestrictiveSelection(left_domain, Or((p, q))),
+            VacuousSelection(right_domain, And((p, Not(q)))),
         )
         for valuation in all_valuations("p", "q"):
             portion_valuation = {
@@ -771,7 +777,7 @@ class SemanticsTests(unittest.TestCase):
                 for point in POINTS:
                     with self.subTest(formula=formula, valuation=valuation, at=point):
                         self.assertEqual(
-                            holds(formula, portion_valuation, point, UNIVERSE),
+                            satisfies(formula, portion_valuation, point, UNIVERSE),
                             finite_oracle(formula, valuation, point),
                         )
 
@@ -787,7 +793,7 @@ class SimplificationTests(unittest.TestCase):
                 )
 
     def test_boolean_constants_complements_and_absorption(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
 
         self.assertEqual(simplify(And((Bool(True), p))), p)
         self.assertEqual(simplify(And((Bool(False), p))), Bool(False))
@@ -799,7 +805,7 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(Or((p, And((p, q))))), p)
 
     def test_negations_are_normalized_before_boolean_simplification(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closed(0, 1)
 
         self.assertEqual(
@@ -811,53 +817,52 @@ class SimplificationTests(unittest.TestCase):
             Or((Not(p), Not(q))),
         )
         self.assertEqual(
-            simplify(Not(ForAll(interval, And((p, q))))),
-            Exists(interval, Or((Not(p), Not(q)))),
+            simplify(Not(UniversalCondition(interval, And((p, q))))),
+            ExistentialCondition(interval, Or((Not(p), Not(q)))),
         )
         self.assertEqual(
-            simplify(Not(Exists(interval, Or((p, q))))),
-            ForAll(interval, And((Not(p), Not(q)))),
+            simplify(Not(ExistentialCondition(interval, Or((p, q))))),
+            UniversalCondition(interval, And((Not(p), Not(q)))),
         )
 
-    def test_quantified_duals_are_recognized_as_boolean_complements(self):
-        p, q = Atom("p"), Atom("q")
+    def test_condition_duals_are_recognized_as_boolean_complements(self):
+        p, q = Proposition("p"), Proposition("q")
         body = And((p, q))
         negated_body = Or((Not(p), Not(q)))
         intervals = (
             P.empty(),
             P.closed(0, 1),
-            P.closed(-1, 0) | P.openclosed(1, 2),
         )
 
         for interval in intervals:
             with self.subTest(interval=interval):
                 self.assertEqual(
                     simplify(
-                        Or((ForAll(interval, body), Exists(interval, negated_body)))
+                        Or((UniversalCondition(interval, body), ExistentialCondition(interval, negated_body)))
                     ),
                     Bool(True),
                 )
                 self.assertEqual(
                     simplify(
-                        And((ForAll(interval, body), Exists(interval, negated_body)))
+                        And((UniversalCondition(interval, body), ExistentialCondition(interval, negated_body)))
                     ),
                     Bool(False),
                 )
                 self.assertEqual(
                     simplify(
-                        Or((Exists(interval, body), ForAll(interval, negated_body)))
+                        Or((ExistentialCondition(interval, body), UniversalCondition(interval, negated_body)))
                     ),
                     Bool(True),
                 )
                 self.assertEqual(
                     simplify(
-                        And((Exists(interval, body), ForAll(interval, negated_body)))
+                        And((ExistentialCondition(interval, body), UniversalCondition(interval, negated_body)))
                     ),
                     Bool(False),
                 )
 
     def test_subset_absorption_factoring_and_distributive_cancellation(self):
-        p, q, r = Atom("p"), Atom("q"), Atom("r")
+        p, q, r = Proposition("p"), Proposition("q"), Proposition("r")
 
         self.assertEqual(
             simplify(Or((And((p, q)), And((p, q, r))))),
@@ -886,7 +891,7 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(Or((equality, Not(equality)))), Bool(True))
 
     def test_variadic_nodes_are_flattened_deduplicated_and_sorted(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
 
         expected = And((p, q))
         self.assertEqual(simplify(And((q, And((p, q)), p))), expected)
@@ -894,33 +899,33 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(Or((q, p))), simplify(Or((p, q))))
 
     def test_empty_interval_precedes_constant_body(self):
-        self.assertEqual(simplify(ForAll(P.empty(), Bool(False))), Bool(True))
-        self.assertEqual(simplify(Exists(P.empty(), Bool(True))), Bool(False))
+        self.assertEqual(simplify(UniversalCondition(P.empty(), Bool(False))), Bool(True))
+        self.assertEqual(simplify(ExistentialCondition(P.empty(), Bool(True))), Bool(False))
 
-    def test_universe_dependent_constant_quantifiers_are_not_over_simplified(self):
+    def test_universe_dependent_constant_conditions_are_not_over_simplified(self):
         outside = P.closed(2, 3)
-        universal = ForAll(outside, Bool(False))
-        existential = Exists(outside, Bool(True))
+        universal = UniversalCondition(outside, Bool(False))
+        existential = ExistentialCondition(outside, Bool(True))
 
         self.assertEqual(simplify(universal), universal)
         self.assertEqual(simplify(existential), existential)
-        self.assertEqual(denote(universal, {}, UNIVERSE), UNIVERSE)
-        self.assertEqual(denote(existential, {}, UNIVERSE), P.empty())
+        self.assertEqual(satisfying_anchors(universal, {}, UNIVERSE), UNIVERSE)
+        self.assertEqual(satisfying_anchors(existential, {}, UNIVERSE), P.empty())
 
-    def test_universe_context_enables_safe_quantifier_implication(self):
-        p = Atom("p")
+    def test_universe_context_enables_safe_condition_implication(self):
+        p = Proposition("p")
         left = P.closed(0, 1)
         touching = P.closed(1, 2)
         disjoint = P.open(1, 2)
         universe = P.closed(0, 2)
 
-        disjunction = Or((ForAll(left, p), Exists(touching, p)))
-        conjunction = And((ForAll(left, p), Exists(touching, p)))
-        no_overlap = Or((ForAll(left, p), Exists(disjoint, p)))
+        disjunction = Or((UniversalCondition(left, p), ExistentialCondition(touching, p)))
+        conjunction = And((UniversalCondition(left, p), ExistentialCondition(touching, p)))
+        no_overlap = Or((UniversalCondition(left, p), ExistentialCondition(disjoint, p)))
 
         self.assertEqual(simplify(disjunction), disjunction)
-        self.assertEqual(simplify(disjunction, universe=universe), Exists(touching, p))
-        self.assertEqual(simplify(conjunction, universe=universe), ForAll(left, p))
+        self.assertEqual(simplify(disjunction, universe=universe), ExistentialCondition(touching, p))
+        self.assertEqual(simplify(conjunction, universe=universe), UniversalCondition(left, p))
         self.assertEqual(simplify(no_overlap, universe=universe), no_overlap)
 
         for valuation in all_valuations("p"):
@@ -928,8 +933,8 @@ class SimplificationTests(unittest.TestCase):
             for formula in (disjunction, conjunction, no_overlap):
                 with self.subTest(formula=formula, valuation=valuation):
                     self.assertEqual(
-                        denote(formula, portion_valuation, universe),
-                        denote(
+                        satisfying_anchors(formula, portion_valuation, universe),
+                        satisfying_anchors(
                             simplify(formula, universe=universe),
                             portion_valuation,
                             universe,
@@ -937,49 +942,50 @@ class SimplificationTests(unittest.TestCase):
                     )
 
     def test_universe_context_simplifies_effective_windows_and_constants(self):
-        p = Atom("p")
+        p = Proposition("p")
         interval = P.closed(0, 1)
         inside = P.closed(0, 1)
         outside = P.closed(2, 3)
 
-        self.assertEqual(simplify(Restrict(interval, p), universe=inside), p)
-        self.assertEqual(simplify(Guard(interval, p), universe=inside), p)
+        self.assertEqual(simplify(RestrictiveSelection(interval, p), universe=inside), p)
+        self.assertEqual(simplify(VacuousSelection(interval, p), universe=inside), p)
         self.assertEqual(
-            simplify(Restrict(interval, p), universe=outside), Bool(False)
+            simplify(RestrictiveSelection(interval, p), universe=outside), Bool(False)
         )
-        self.assertEqual(simplify(Guard(interval, p), universe=outside), Bool(True))
+        self.assertEqual(simplify(VacuousSelection(interval, p), universe=outside), Bool(True))
         self.assertEqual(
-            simplify(ForAll(interval, Bool(False)), universe=inside), Bool(False)
-        )
-        self.assertEqual(
-            simplify(ForAll(interval, Bool(False)), universe=outside), Bool(True)
+            simplify(UniversalCondition(interval, Bool(False)), universe=inside), Bool(False)
         )
         self.assertEqual(
-            simplify(Exists(interval, Bool(True)), universe=inside), Bool(True)
+            simplify(UniversalCondition(interval, Bool(False)), universe=outside), Bool(True)
         )
         self.assertEqual(
-            simplify(Exists(interval, Bool(True)), universe=outside), Bool(False)
+            simplify(ExistentialCondition(interval, Bool(True)), universe=inside), Bool(True)
+        )
+        self.assertEqual(
+            simplify(ExistentialCondition(interval, Bool(True)), universe=outside), Bool(False)
         )
 
     def test_interval_decomposition_is_bounded_and_kept_only_when_smaller(self):
-        p = Atom("p")
+        p = Proposition("p")
         whole = P.closed(0, 2)
         part = P.closed(0, 1)
-        contradiction = And((ForAll(whole, p), Exists(part, Not(p))))
-        disconnected = P.closed(-1, 0) | P.openclosed(1, 2)
+        contradiction = And((UniversalCondition(whole, p), ExistentialCondition(part, Not(p))))
+        left = P.closed(-1, 0)
+        right = P.openclosed(1, 2)
 
         self.assertEqual(simplify(contradiction), Bool(False))
         self.assertEqual(simplify(contradiction, max_nodes=2), contradiction)
-        self.assertEqual(
-            simplify(Exists(disconnected, p)),
-            Exists(disconnected, p),
+        disjoint = Or(
+            (ExistentialCondition(left, p), ExistentialCondition(right, p))
         )
+        self.assertEqual(simplify(disjoint), disjoint)
 
     def test_known_equivalence_can_be_substituted_between_simplification_passes(self):
-        q = Atom("q")
+        q = Proposition("q")
         equality = Signal("j").equals(1)
         interval = P.closed(0, 1)
-        formula = Or((ForAll(interval, equality), Exists(interval, Not(q))))
+        formula = Or((UniversalCondition(interval, equality), ExistentialCondition(interval, Not(q))))
 
         rewritten = simplify(formula).replace(
             lambda expression: q if expression == equality else expression
@@ -988,11 +994,11 @@ class SimplificationTests(unittest.TestCase):
         self.assertEqual(simplify(rewritten), Bool(True))
 
     def test_simplification_context_and_budget_are_validated_and_forwarded(self):
-        p = Atom("p")
+        p = Proposition("p")
         interval = P.closed(0, 1)
 
         self.assertEqual(
-            Restrict(interval, p).simplify(universe=interval),
+            RestrictiveSelection(interval, p).simplify(universe=interval),
             p,
         )
         with self.assertRaisesRegex(TypeError, "portion.Interval"):
@@ -1003,18 +1009,18 @@ class SimplificationTests(unittest.TestCase):
                     simplify(p, max_nodes=invalid)
 
     def test_contextual_simplification_preserves_semantics_across_universes(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         formulas = (
             Not(And((p, q))),
-            Or((ForAll(P.closed(-1, 0), p), Exists(P.closed(0, 1), p))),
+            Or((UniversalCondition(P.closed(-1, 0), p), ExistentialCondition(P.closed(0, 1), p))),
             And(
                 (
-                    ForAll(P.closed(-1, 1), p),
-                    Exists(P.closed(-1, 0), Not(p)),
+                    UniversalCondition(P.closed(-1, 1), p),
+                    ExistentialCondition(P.closed(-1, 0), Not(p)),
                 )
             ),
-            Restrict(P.closed(-1, 0), p),
-            Guard(P.closed(0, 1), q),
+            RestrictiveSelection(P.closed(-1, 0), p),
+            VacuousSelection(P.closed(0, 1), q),
         )
         universes = (P.empty(), P.singleton(0), UNIVERSE, P.closed(2, 3))
 
@@ -1033,106 +1039,120 @@ class SimplificationTests(unittest.TestCase):
                         valuation=valuation,
                     ):
                         self.assertEqual(
-                            denote(formula, portion_valuation, universe),
-                            denote(result, portion_valuation, universe),
+                            satisfying_anchors(formula, portion_valuation, universe),
+                            satisfying_anchors(result, portion_valuation, universe),
                         )
 
-    def test_equal_interval_quantifiers_combine_bodies(self):
-        p, q = Atom("p"), Atom("q")
+    def test_equal_interval_conditions_combine_bodies(self):
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closed(0, 1)
 
-        universal = simplify(And((ForAll(interval, p), ForAll(interval, q))))
-        existential = simplify(Or((Exists(interval, p), Exists(interval, q))))
+        universal = simplify(And((UniversalCondition(interval, p), UniversalCondition(interval, q))))
+        existential = simplify(Or((ExistentialCondition(interval, p), ExistentialCondition(interval, q))))
 
-        self.assertEqual(universal, ForAll(interval, And((p, q))))
-        self.assertEqual(existential, Exists(interval, Or((p, q))))
+        self.assertEqual(universal, UniversalCondition(interval, And((p, q))))
+        self.assertEqual(existential, ExistentialCondition(interval, Or((p, q))))
 
-    def test_same_body_quantifiers_merge_interval_unions(self):
-        p = Atom("p")
+    def test_same_body_conditions_merge_connected_interval_unions(self):
+        p = Proposition("p")
         left, right = P.closed(-1, 0), P.closed(0, 1)
 
         self.assertEqual(
-            simplify(And((ForAll(left, p), ForAll(right, p)))),
-            ForAll(left | right, p),
+            simplify(And((UniversalCondition(left, p), UniversalCondition(right, p)))),
+            UniversalCondition(left | right, p),
         )
         self.assertEqual(
-            simplify(Or((Exists(left, p), Exists(right, p)))),
-            Exists(left | right, p),
+            simplify(Or((ExistentialCondition(left, p), ExistentialCondition(right, p)))),
+            ExistentialCondition(left | right, p),
         )
 
     def test_window_constants_full_domain_and_nesting(self):
-        p = Atom("p")
+        p = Proposition("p")
         left, right = P.closed(-1, 0), P.closed(0, 1)
         all_time = P.open(-P.inf, P.inf)
 
-        self.assertEqual(simplify(Restrict(P.empty(), p)), Bool(False))
-        self.assertEqual(simplify(Guard(P.empty(), p)), Bool(True))
-        self.assertEqual(simplify(Restrict(left, Bool(False))), Bool(False))
-        self.assertEqual(simplify(Guard(left, Bool(True))), Bool(True))
-        self.assertEqual(simplify(Restrict(all_time, p)), p)
-        self.assertEqual(simplify(Guard(all_time, p)), p)
+        self.assertEqual(simplify(RestrictiveSelection(P.empty(), p)), Bool(False))
+        self.assertEqual(simplify(VacuousSelection(P.empty(), p)), Bool(True))
+        self.assertEqual(simplify(RestrictiveSelection(left, Bool(False))), Bool(False))
+        self.assertEqual(simplify(VacuousSelection(left, Bool(True))), Bool(True))
+        self.assertEqual(simplify(RestrictiveSelection(all_time, p)), p)
+        self.assertEqual(simplify(VacuousSelection(all_time, p)), p)
         self.assertEqual(
-            simplify(Restrict(left, Restrict(right, p))),
-            Restrict(left & right, p),
+            simplify(RestrictiveSelection(left, RestrictiveSelection(right, p))),
+            RestrictiveSelection(left & right, p),
         )
         self.assertEqual(
-            simplify(Guard(left, Guard(right, p))), Guard(left & right, p)
+            simplify(VacuousSelection(left, VacuousSelection(right, p))), VacuousSelection(left & right, p)
         )
 
     def test_same_window_bodies_and_same_body_intervals_merge(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         left, right = P.closed(-1, 0), P.closed(0, 1)
 
         self.assertEqual(
-            simplify(And((Restrict(left, p), Restrict(left, q)))),
-            Restrict(left, And((p, q))),
+            simplify(And((RestrictiveSelection(left, p), RestrictiveSelection(left, q)))),
+            RestrictiveSelection(left, And((p, q))),
         )
         self.assertEqual(
-            simplify(Or((Guard(left, p), Guard(left, q)))),
-            Guard(left, Or((p, q))),
+            simplify(Or((VacuousSelection(left, p), VacuousSelection(left, q)))),
+            VacuousSelection(left, Or((p, q))),
         )
         self.assertEqual(
-            simplify(And((Restrict(left, p), Restrict(right, p)))),
-            Restrict(left & right, p),
+            simplify(And((RestrictiveSelection(left, p), RestrictiveSelection(right, p)))),
+            RestrictiveSelection(left & right, p),
         )
         self.assertEqual(
-            simplify(Or((Restrict(left, p), Restrict(right, p)))),
-            Restrict(left | right, p),
+            simplify(Or((RestrictiveSelection(left, p), RestrictiveSelection(right, p)))),
+            RestrictiveSelection(left | right, p),
         )
         self.assertEqual(
-            simplify(And((Guard(left, p), Guard(right, p)))),
-            Guard(left | right, p),
+            simplify(And((VacuousSelection(left, p), VacuousSelection(right, p)))),
+            VacuousSelection(left | right, p),
         )
         self.assertEqual(
-            simplify(Or((Guard(left, p), Guard(right, p)))),
-            Guard(left & right, p),
+            simplify(Or((VacuousSelection(left, p), VacuousSelection(right, p)))),
+            VacuousSelection(left & right, p),
         )
 
-    def test_quantifiers_absorb_compatible_windows(self):
-        p = Atom("p")
+    def test_disconnected_merges_remain_explicit(self):
+        p = Proposition("p")
+        left, right = P.closed(-2, -1), P.closed(1, 2)
+        formulas = (
+            Or((RestrictiveSelection(left, p), RestrictiveSelection(right, p))),
+            And((VacuousSelection(left, p), VacuousSelection(right, p))),
+            And((UniversalCondition(left, p), UniversalCondition(right, p))),
+            Or((ExistentialCondition(left, p), ExistentialCondition(right, p))),
+        )
+
+        for formula in formulas:
+            with self.subTest(formula=formula):
+                self.assertEqual(simplify(formula), formula)
+
+    def test_conditions_absorb_compatible_selections(self):
+        p = Proposition("p")
         left, right = P.closed(-1, 0), P.closed(0, 1)
 
         self.assertEqual(
-            simplify(Exists(left, Restrict(right, p))), Exists(left & right, p)
+            simplify(ExistentialCondition(left, RestrictiveSelection(right, p))), ExistentialCondition(left & right, p)
         )
         self.assertEqual(
-            simplify(ForAll(left, Guard(right, p))), ForAll(left & right, p)
+            simplify(UniversalCondition(left, VacuousSelection(right, p))), UniversalCondition(left & right, p)
         )
 
     def test_all_window_rewrites_preserve_finite_model_semantics(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         left, right = P.closed(-1, 0), P.closed(0, 1)
         formulas = (
-            Restrict(left, Restrict(right, p)),
-            Guard(left, Guard(right, p)),
-            And((Restrict(left, p), Restrict(right, p))),
-            Or((Restrict(left, p), Restrict(right, p))),
-            And((Guard(left, p), Guard(right, p))),
-            Or((Guard(left, p), Guard(right, p))),
-            And((Restrict(left, p), Restrict(left, q))),
-            Or((Guard(left, p), Guard(left, q))),
-            Exists(left, Restrict(right, p)),
-            ForAll(left, Guard(right, p)),
+            RestrictiveSelection(left, RestrictiveSelection(right, p)),
+            VacuousSelection(left, VacuousSelection(right, p)),
+            And((RestrictiveSelection(left, p), RestrictiveSelection(right, p))),
+            Or((RestrictiveSelection(left, p), RestrictiveSelection(right, p))),
+            And((VacuousSelection(left, p), VacuousSelection(right, p))),
+            Or((VacuousSelection(left, p), VacuousSelection(right, p))),
+            And((RestrictiveSelection(left, p), RestrictiveSelection(left, q))),
+            Or((VacuousSelection(left, p), VacuousSelection(left, q))),
+            ExistentialCondition(left, RestrictiveSelection(right, p)),
+            UniversalCondition(left, VacuousSelection(right, p)),
         )
         for formula in formulas:
             with self.subTest(formula=formula):
@@ -1142,18 +1162,18 @@ class SimplificationTests(unittest.TestCase):
                 self.assert_equivalent_on_finite_models(formula, result)
 
     def test_simplification_is_semantics_preserving_idempotent_and_compact(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closed(0, 1)
         formulas = (
             Not(Not(p)),
             And((Bool(True), p, Or((p, q)))),
             Or((Bool(False), q, And((p, q)))),
-            And((ForAll(interval, p), ForAll(interval, q))),
-            Or((Exists(interval, p), Exists(interval, q))),
-            And((ForAll(P.closed(-1, 0), p), ForAll(P.closed(0, 1), p))),
-            Or((Exists(P.closed(-1, 0), q), Exists(P.closed(0, 1), q))),
-            Restrict(interval, Restrict(P.closed(-1, 0), p)),
-            Guard(interval, Guard(P.closed(-1, 0), q)),
+            And((UniversalCondition(interval, p), UniversalCondition(interval, q))),
+            Or((ExistentialCondition(interval, p), ExistentialCondition(interval, q))),
+            And((UniversalCondition(P.closed(-1, 0), p), UniversalCondition(P.closed(0, 1), p))),
+            Or((ExistentialCondition(P.closed(-1, 0), q), ExistentialCondition(P.closed(0, 1), q))),
+            RestrictiveSelection(interval, RestrictiveSelection(P.closed(-1, 0), p)),
+            VacuousSelection(interval, VacuousSelection(P.closed(-1, 0), q)),
         )
 
         for formula in formulas:
@@ -1165,40 +1185,40 @@ class SimplificationTests(unittest.TestCase):
 
 
 class NormalizationTests(unittest.TestCase):
-    def test_nnf_lowers_derived_nodes_and_pushes_negation_to_atoms(self):
-        p, q = Atom("p"), Atom("q")
-        result = to_nnf(Not(Implies(p, ForAll(P.closed(0, 1), q))))
+    def test_nnf_lowers_derived_nodes_and_pushes_negation_to_leaves(self):
+        p, q = Proposition("p"), Proposition("q")
+        result = to_nnf(Not(Implies(p, UniversalCondition(P.closed(0, 1), q))))
 
-        self.assertEqual(result, And((p, Exists(P.closed(0, 1), Not(q)))))
-        self.assertTrue(self._negations_only_wrap_atoms(result))
+        self.assertEqual(result, And((p, ExistentialCondition(P.closed(0, 1), Not(q)))))
+        self.assertTrue(self._negations_only_wrap_leaves(result))
 
     def test_nnf_swaps_window_polarity(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         interval = P.closed(0, 1)
 
         self.assertEqual(
-            to_nnf(Not(Restrict(interval, Or((p, q))))),
-            Guard(interval, And((Not(p), Not(q)))),
+            to_nnf(Not(RestrictiveSelection(interval, Or((p, q))))),
+            VacuousSelection(interval, And((Not(p), Not(q)))),
         )
         self.assertEqual(
-            to_nnf(Not(Guard(interval, And((p, q))))),
-            Restrict(interval, Or((Not(p), Not(q)))),
+            to_nnf(Not(VacuousSelection(interval, And((p, q))))),
+            RestrictiveSelection(interval, Or((Not(p), Not(q)))),
         )
 
-    def test_equality_is_an_atomic_nnf_literal(self):
+    def test_equality_is_an_nnf_literal(self):
         equality = Signal("j").equals(0)
 
         self.assertEqual(to_nnf(Not(Not(equality))), equality)
         self.assertEqual(to_nnf(Not(equality)), Not(equality))
-        self.assertTrue(self._negations_only_wrap_atoms(Not(equality)))
+        self.assertTrue(self._negations_only_wrap_leaves(Not(equality)))
         self.assertEqual(partition_intervals(equality), equality)
 
     def test_partitioning_uses_shared_disjoint_cells(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         original = And(
             (
-                ForAll(P.closed(0, 2), p),
-                ForAll(P.closed(1, 3), q),
+                UniversalCondition(P.closed(0, 2), p),
+                UniversalCondition(P.closed(1, 3), q),
             )
         )
 
@@ -1206,7 +1226,7 @@ class NormalizationTests(unittest.TestCase):
         intervals = [
             node.interval
             for node in self._walk(result)
-            if isinstance(node, ForAll)
+            if isinstance(node, UniversalCondition)
         ]
 
         self.assertEqual(
@@ -1219,37 +1239,39 @@ class NormalizationTests(unittest.TestCase):
                 for name, values in valuation.items()
             }
             self.assertEqual(
-                denote(original, portion_valuation, P.closed(-1, 3)),
-                denote(result, portion_valuation, P.closed(-1, 3)),
+                satisfying_anchors(original, portion_valuation, P.closed(-1, 3)),
+                satisfying_anchors(result, portion_valuation, P.closed(-1, 3)),
             )
 
-    def test_partitioning_handles_disconnected_intervals(self):
-        p = Atom("p")
-        interval = P.closed(-1, 0) | P.openclosed(1, 2)
-
-        result = partition_intervals(Exists(interval, p))
-
-        self.assertEqual(
-            result,
-            Or((Exists(P.closed(-1, 0), p), Exists(P.openclosed(1, 2), p))),
+    def test_partitioning_preserves_explicit_disjoint_condition_composition(self):
+        p = Proposition("p")
+        original = Or(
+            (
+                ExistentialCondition(P.closed(-1, 0), p),
+                ExistentialCondition(P.openclosed(1, 2), p),
+            )
         )
 
+        result = partition_intervals(original)
+
+        self.assertEqual(result, original)
+
     def test_partitioning_splits_windows_with_dual_connectives(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         restricted_interval = P.closed(0, 2)
         guarded_interval = P.closed(1, 3)
         original = And(
             (
-                Restrict(restricted_interval, p),
-                Guard(guarded_interval, q),
+                RestrictiveSelection(restricted_interval, p),
+                VacuousSelection(guarded_interval, q),
             )
         )
 
         result = partition_intervals(original)
         restricted = [
-            node.interval for node in self._walk(result) if isinstance(node, Restrict)
+            node.interval for node in self._walk(result) if isinstance(node, RestrictiveSelection)
         ]
-        guarded = [node.interval for node in self._walk(result) if isinstance(node, Guard)]
+        guarded = [node.interval for node in self._walk(result) if isinstance(node, VacuousSelection)]
 
         self.assertEqual(set(restricted), {P.closedopen(0, 1), P.closed(1, 2)})
         self.assertEqual(set(guarded), {P.closed(1, 2), P.openclosed(2, 3)})
@@ -1259,16 +1281,16 @@ class NormalizationTests(unittest.TestCase):
                 for name, values in valuation.items()
             }
             self.assertEqual(
-                denote(original, portion_valuation, P.closed(-1, 3)),
-                denote(result, portion_valuation, P.closed(-1, 3)),
+                satisfying_anchors(original, portion_valuation, P.closed(-1, 3)),
+                satisfying_anchors(result, portion_valuation, P.closed(-1, 3)),
             )
 
     def test_partitioning_enforces_node_budget(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         expression = And(
             (
-                ForAll(P.closed(0, 2), p),
-                ForAll(P.closed(1, 3), q),
+                UniversalCondition(P.closed(0, 2), p),
+                UniversalCondition(P.closed(1, 3), q),
             )
         )
 
@@ -1282,16 +1304,16 @@ class NormalizationTests(unittest.TestCase):
         for child in expression.children:
             yield from self._walk(child)
 
-    def _negations_only_wrap_atoms(self, expression):
+    def _negations_only_wrap_leaves(self, expression):
         return all(
-            not isinstance(node, Not) or isinstance(node.operand, (Atom, Equal))
+            not isinstance(node, Not) or isinstance(node.operand, (Proposition, Equal))
             for node in self._walk(expression)
         )
 
 
 class DerivedOperatorTests(unittest.TestCase):
     def test_builtin_derived_operators_lower_to_core_formulas(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
 
         self.assertEqual(lower_derived(Implies(p, q)), Or((Not(p), q)))
         self.assertEqual(
@@ -1304,7 +1326,7 @@ class DerivedOperatorTests(unittest.TestCase):
         )
 
     def test_derived_operators_have_expected_truth_tables(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         expressions = {
             Implies(p, q): lambda left, right: (not left) or right,
             Equivalent(p, q): lambda left, right: left == right,
@@ -1318,17 +1340,17 @@ class DerivedOperatorTests(unittest.TestCase):
                 }
                 with self.subTest(expression=expression, left=left, right=right):
                     self.assertEqual(
-                        holds(expression, valuation, 0, UNIVERSE),
+                        satisfies(expression, valuation, 0, UNIVERSE),
                         expected(left, right),
                     )
 
     def test_custom_derived_operator_requires_no_evaluator_changes(self):
-        p, q = Atom("p"), Atom("q")
+        p, q = Proposition("p"), Proposition("q")
         expression = Nand(p, q)
 
         self.assertEqual(simplify(expression), Or((Not(p), Not(q))))
         self.assertFalse(
-            holds(expression, {"p": UNIVERSE, "q": UNIVERSE}, 0, UNIVERSE)
+            satisfies(expression, {"p": UNIVERSE, "q": UNIVERSE}, 0, UNIVERSE)
         )
 
     def test_malformed_and_cyclic_derived_operators_fail_clearly(self):

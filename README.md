@@ -1,84 +1,103 @@
 # Interval logic
 
-`interval_logic` provides immutable formulas over absolute time intervals. Atom
-valuations and the evaluation universe are represented by `portion.Interval`
-objects. Supplied valuations and all interval operators are clipped to that
-universe during evaluation, except that `Hold` conservatively rejects a start
-whose complete requested horizon is not represented.
+`interval_logic` provides immutable formulas with exact absolute- and
+relative-time semantics. Proposition valuations and the evaluation universe
+are represented by `portion.Interval` objects. `satisfying_anchors()` returns
+the represented anchor times at which a formula is locally true, while
+`anchored_denotation()` returns the full set-valued denotation at one anchor.
 
-Interval operators accept either `portion.Interval` objects or interval strings.
-Strings are parsed with `portion.from_string(value, float)`, so, for example,
-`Exists("[1, 2)", Atom("p"))` is equivalent to
-`Exists(P.closedopen(1.0, 2.0), Atom("p"))`.
+The language and its denotational semantics are defined in
+[`LOGIC.md`](LOGIC.md), the canonical logic specification.
+
+Every temporal operator uses the same parameter forms:
+
+- a connected `portion.Interval` or ordinary interval string is absolute;
+- `RelativeInterval(D)` or an interval string ending in `+` is relative;
+- `d]` and `d)` mean `[0,d]+` and `[0,d)+`;
+- a non-negative real is compatibility shorthand for `d]`;
+- `None` means the omitted, unbounded parameter `[0,+inf)+`.
+
+Relative intervals must be nonempty, connected, and non-negative. The special
+one-sided parameter `0)` is the specified empty relative window.
 
 ```python
 import portion as P
 
-from interval_logic import Atom, Exists, ForAll, Guard, Restrict, denote, simplify
+from interval_logic import (
+    Bool,
+    RelativeInterval,
+    Proposition,
+    Selection,
+    Until,
+    UniversalCondition,
+    anchored_denotation,
+    simplify,
+    satisfying_anchors,
+)
 
-available = Atom("available")
-window = P.closed(8, 10)
-formula = ForAll(window, available)
+available = Proposition("available")
+fault = Proposition("fault")
+formula = Until("5]", available, fault)
 
-truth = denote(
+truth = satisfying_anchors(
     formula,
-    {"available": P.closed(7, 11)},
+    {
+        "available": P.closedopen(0, 3),
+        "fault": P.singleton(3),
+    },
     universe=P.closed(0, 24),
 )
-assert truth == P.closed(0, 24)
-assert simplify(formula & True) == formula
+assert truth == P.closed(0, 3)
 ```
 
-Restrictive windows are false outside their interval; guarded windows are
-vacuously true outside it:
+The canonical parser and formatter mirror `LOGIC.md`:
 
 ```python
-restricted = Restrict(window, available)  # also: available.restrict(window)
-guarded = Guard(window, available)        # also: available.guard(window)
+from interval_logic import parse_expression
 
-assert str(restricted) == "[8,10]_(available)"
-assert str(guarded) == "[8,10]^(available)"
+assert str(parse_expression("<available, fault>_[1,3]+")) == "⟨available, fault⟩_[1,3]+"
+assert str(parse_expression("always_5] eventually_2] available")) == "□_5] ◇_2] available"
+assert str(parse_expression("available U_[1,3]+ fault")) == "available U_[1,3]+ fault"
 ```
 
-`Hold(delta, formula)` requires a formula to remain true throughout the closed
-interval `[t, t + delta]`, where `t` is the current time. Its bounded
-existential counterpart, `Eventually(delta, formula)`, requires one true time
-in that same relative window. They can also be constructed fluently or parsed
-using `H^delta formula` and `F^delta formula`:
+Unary selections are the binary selector's `true`/`false` special cases.
+`⟨p⟩_ρ` is true outside its window; `⟨p⟩*_ρ` is false outside it. Selection
+operands retain the selection's anchor. Conditions (`□`, `◇`) and until instead
+inspect their operands using local truth re-anchored at each inspected time.
+
+Use `anchored_denotation()` when that distinction matters:
 
 ```python
-from interval_logic import Eventually, Hold
+mask = Selection(P.closed(0, 4), parse_expression("eventually_1] available"), Bool(False))
+denotation = anchored_denotation(
+    mask,
+    {"available": P.singleton(1)},
+    anchor=0,
+    universe=P.closed(0, 6),
+)
+assert denotation == P.closed(0, 4)
+```
 
-stable = Hold(2, available)
-assert stable == available.hold(2)
-assert stable == parse_expression("H^2 available")
-assert str(stable) == "H^2 available"
+`Eventually(delta, formula)` and `F^delta formula` remain compatibility forms
+for a closed one-sided existential condition:
+
+```python
+from interval_logic import Eventually
 
 soon = Eventually(2, available)
 assert soon == available.eventually(2)
 assert soon == parse_expression("F^2 available")
 ```
 
-Durations are finite, non-negative real numbers, and both zero-duration
-operators are identities. `Hold` does not shorten its obligation at an
-evaluation-universe boundary: it can be true at `t` only when the whole closed
-window `[t, t + delta]` is represented. `Eventually` may use any represented
-witness in its window.
-
-When the expanded interval is represented, the absolute/relative identities
-are
-`ForAll(I, Hold(delta, phi)) == ForAll(I + [0,delta], phi)` and
-`Exists(I, Eventually(delta, phi)) == Exists(I + [0,delta], phi)`. The
-simplifier applies these contextual rewrites when an explicit universe proves
-them safe. The familiar Boolean duality between `Hold` and `Eventually` also
-holds on start times whose complete horizon is represented; it is not applied
-blindly at finite-universe boundaries.
+`WeakUntil(ρ,p,q)` lowers to `Until(ρ,p,q) | UniversalCondition(span(ρ),p)`;
+`Release` uses the strong-until dual. Only represented times are inspected, so
+temporal witnesses may cross gaps in a disconnected evaluation universe.
 
 Formulas use mathematical notation with precedence-aware parentheses when
 converted to strings:
 
 ```python
-print(formula & available)  # (∀[8,10]: available) ∧ available
+print(formula & available)  # available U_5] fault ∧ available
 ```
 
 Use `format_expression(formula, unicode=False)` for ASCII-only logs. `repr()`
@@ -93,16 +112,16 @@ from interval_logic import parse_expression
 formula = parse_expression(
     "forall[8,10]: `vehicle connected` -> !fault"
 )
-assert str(formula) == "∀[8,10]: `vehicle connected` → ¬fault"
+assert str(formula) == "□_[8,10] (`vehicle connected` → ¬fault)"
 assert parse_expression(str(formula)) == formula
 ```
 
 The parser accepts `true`/`false`, `!`, `&`, `|`, `xor`, `->`, and `<->`, as
 well as their Unicode counterparts `⊤`/`⊥`, `¬`, `∧`, `∨`, `⊕`, `→`, and `↔`.
-It also parses signal equalities (`j = 1`, `j != 0`), quantifiers, bounded
-temporal operators, and the restrict/guard forms emitted by the formatter. Invalid input raises
-`ParseError`, whose `position`, `line`, and `column` attributes locate the
-problem.
+It also parses signal equalities (`j = 1`, `j != 0`), `□`/`◇`, `U`/`W`/`R`,
+binary and unary selections, every temporal-parameter form, and the legacy
+spellings shown above. Invalid input raises `ParseError`, whose `position`,
+`line`, and `column` attributes locate the problem.
 
 Anywhere the public API expects an `Expression`, the same notation can be
 passed directly as a string. This includes expression constructors, derived
@@ -110,23 +129,23 @@ operators, rewriting and normalization functions, evaluation, formatting, and
 timelines:
 
 ```python
-formula = ForAll("[8,10]", "available & !fault")
+formula = UniversalCondition("[8,10]", "available & !fault")
 assert formula == parse_expression("forall[8,10]: available & !fault")
-assert simplify("available & true") == Atom("available")
+assert simplify("available & true") == Proposition("available")
 ```
 
-In a notebook, `timeline(formula, valuation, universe)` displays an exact
-interval table and an inline SVG Gantt chart for the valuation and formula
-denotation. Its plain `str()` form provides the same interval data in terminals.
+`timeline(formula, valuation, universe)` displays an exact interval table and an
+inline SVG Gantt chart for the valuation and formula's satisfying-anchor sweep.
+Its plain `str()` form provides the same interval data in terminals.
 
-## Natural-number signals
+## Non-negative-integer signals
 
 Formulas can compare piecewise-constant natural-number signals. Signal regions
 must be disjoint, and time outside those regions must either be covered
 explicitly or assigned an explicit default.
 
 ```python
-from interval_logic import ForAll, NaturalSignal, Signal
+from interval_logic import UniversalCondition, NaturalSignal, Signal
 
 universe = P.closed(0, 24)
 j1, j2 = Signal("j_1"), Signal("j_2")
@@ -135,11 +154,11 @@ signals = {
     "j_2": NaturalSignal({23: P.closedopen(9, 11)}, default=0),
 }
 
-no_duplicate_job = ForAll(
+no_duplicate_job = UniversalCondition(
     universe,
     j1.not_equals(j2) | (j1.equals(0) & j2.equals(0)),
 )
-assert denote(no_duplicate_job, {}, universe, signals=signals) == universe
+assert satisfying_anchors(no_duplicate_job, {}, universe, signals=signals) == universe
 ```
 
 Use `.equals()` and `.not_equals()` to construct formulas. Python `==` remains
@@ -155,7 +174,7 @@ parent. Structural equality makes exact subexpressions easy to select:
 import interval_logic as il
 
 target = il.Signal("j").equals(1)
-formula = il.Exists("[0, 4]", target | il.Signal("j").equals(2))
+formula = il.ExistentialCondition("[0, 4]", target | il.Signal("j").equals(2))
 
 def negate_other_equalities(expression):
     if isinstance(expression, il.Equal):
@@ -202,26 +221,26 @@ def _with_children(self, children):
     return type(self)(self.label, *children)
 ```
 
-Use `simplify()` to lower derived operators, push negations to atoms, recognize
-Boolean and quantified complements, and apply compact Boolean and interval
-rewrites. Negation normalization can grow a formula slightly; speculative
-distribution and interval decomposition are kept only when the final result is
-smaller. `max_nodes` bounds those speculative candidates, which are skipped if
-they exceed the budget.
+Use `simplify()` to lower derived operators, push supported negations to formula
+leaves, recognize Boolean and condition complements, and apply compact Boolean
+and interval rewrites. Negation normalization can grow a formula slightly;
+speculative distribution and interval decomposition are kept only when the
+final result is smaller. `max_nodes` bounds those speculative candidates, which
+are skipped if they exceed the budget.
 
-Quantifier implication depends on the evaluation universe. Pass it explicitly
+Condition implication depends on the evaluation universe. Pass it explicitly
 to enable those contextual rules and effective-window reductions:
 
 ```python
-p = Atom("p")
+p = Proposition("p")
 left = P.closed(0, 1)
 right = P.closed(1, 2)
 universe = P.closed(0, 2)
 
-formula = ForAll(left, p) | Exists(right, p)
+formula = UniversalCondition(left, p) | ExistentialCondition(right, p)
 assert simplify(formula) == formula  # conservative for every universe
-assert simplify(formula, universe=universe) == Exists(right, p)
-assert formula.simplify(universe=universe, max_nodes=1_000) == Exists(right, p)
+assert simplify(formula, universe=universe) == ExistentialCondition(right, p)
+assert formula.simplify(universe=universe, max_nodes=1_000) == ExistentialCondition(right, p)
 ```
 
 A result simplified with `universe=...` is equivalent relative to that universe.
@@ -232,8 +251,8 @@ the replacement expose further cancellations:
 from interval_logic import Bool, Signal
 
 job_one = Signal("j").equals(1)
-q = Atom("q")
-formula_with_known_equivalence = ForAll(left, job_one) | Exists(left, ~q)
+q = Proposition("q")
+formula_with_known_equivalence = UniversalCondition(left, job_one) | ExistentialCondition(left, ~q)
 
 def domain_rewrite(expression):
     return q if expression == job_one else expression
@@ -247,13 +266,9 @@ assert final == Bool(True)
 Use `to_nnf()` when only an explicit negation-normal result is needed, and
 `partition_intervals()` when a shared disjoint interval partition must be
 retained even if it is larger. The partitioner raises `ExpansionLimitError`
-when its `max_nodes` budget is exceeded. NNF swaps `Restrict` and `Guard` under
-negation. Universe-independent NNF retains negated `Hold` and `Eventually`
-nodes because their ordinary duality is conditional at a finite-universe
-boundary.
-
-Examples are available in
-[`notebooks/tutorial.ipynb`](notebooks/tutorial.ipynb).
+when its `max_nodes` budget is exceeded. NNF swaps `RestrictiveSelection` and
+`VacuousSelection` under negation, negates binary selection componentwise,
+swaps universal/existential conditions, and applies the until/release duality.
 
 ## Development
 

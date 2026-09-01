@@ -6,24 +6,28 @@ import portion as P
 
 from .ast import (
     And,
-    Atom,
+    Proposition,
     Bool,
     Equal,
     Eventually,
-    Exists,
+    ExistentialCondition,
     Expression,
-    ForAll,
-    Guard,
-    Hold,
-    Natural,
+    Release,
+    Selection,
+    Until,
+    UniversalCondition,
+    VacuousSelection,
+    NaturalLiteral,
     Not,
     Or,
-    Restrict,
+    RestrictiveSelection,
     Signal,
     Term,
+    WeakUntil,
 )
 from .derived import Equivalent, Implies, Xor
 from .errors import ParseError
+from .temporal import coerce_temporal_parameter
 
 
 def parse_expression(source: str) -> Expression:
@@ -61,18 +65,18 @@ class _Parser:
         return expression
 
     def _parse_expression(self) -> Expression:
-        return self._parse_quantifier()
+        return self._parse_condition()
 
-    def _parse_quantifier(self) -> Expression:
+    def _parse_condition(self) -> Expression:
         self._skip_whitespace()
         start = self.position
 
         if self._match_symbol("∀") or self._match_keyword("forall"):
-            operator = ForAll
-            name = "universal quantifier"
+            operator = UniversalCondition
+            name = "universal condition"
         elif self._match_symbol("∃") or self._match_keyword("exists"):
-            operator = Exists
-            name = "existential quantifier"
+            operator = ExistentialCondition
+            name = "existential condition"
         else:
             self.position = start
             return self._parse_equivalent()
@@ -119,14 +123,26 @@ class _Parser:
         return operands[0] if len(operands) == 1 else Or(operands)
 
     def _parse_and(self) -> Expression:
-        operands = [self._parse_unary()]
+        operands = [self._parse_temporal_infix()]
         while self._match_operator("∧", "&"):
-            operands.append(self._parse_unary())
+            operands.append(self._parse_temporal_infix())
         return operands[0] if len(operands) == 1 else And(operands)
+
+    def _parse_temporal_infix(self) -> Expression:
+        left = self._parse_unary()
+        matched = self._match_temporal_infix()
+        if matched is None:
+            return left
+        operator, name = matched
+        parameter = self._parse_optional_parameter(name)
+        return operator(parameter, left, self._parse_temporal_infix())
 
     def _parse_unary(self) -> Expression:
         if self._match_operator("¬", "!"):
             return Not(self._parse_unary())
+        condition = self._try_parse_canonical_condition()
+        if condition is not None:
+            return condition
         temporal = self._try_parse_temporal()
         if temporal is not None:
             return temporal
@@ -135,19 +151,21 @@ class _Parser:
     def _try_parse_temporal(self) -> Expression | None:
         self._skip_whitespace()
         start = self.position
-        if self._match_symbol("H"):
-            operator = Hold
-            name = "hold"
-            notation = "H^"
-        elif self._match_symbol("F"):
-            operator = Eventually
-            name = "eventually"
-            notation = "F^"
-        else:
+        if not self._match_symbol("F"):
             return None
-        if not self._match_symbol("^"):
+
+        if not self._at_end and self.source[self.position] == "_":
+            parameter = self._parse_optional_parameter("eventually")
+            return Eventually(parameter, self._parse_unary())
+        if not self._at_end and self.source[self.position].isspace():
+            return Eventually(None, self._parse_unary())
+        if self._at_end:
             self.position = start
             return None
+        if self.source[self.position] != "^":
+            self.position = start
+            return None
+        self.position += 1
 
         self._skip_whitespace()
         delta_start = self.position
@@ -160,7 +178,7 @@ class _Parser:
             fractional_digits = self._consume_ascii_digits()
         if not integer_digits and not fractional_digits:
             self._fail(
-                f"expected a non-negative real duration after '{notation}'",
+                "expected a non-negative real duration after 'F^'",
                 delta_start,
             )
         if not self._at_end and self.source[self.position] in "eE":
@@ -169,22 +187,26 @@ class _Parser:
             if not self._at_end and self.source[self.position] in "+-":
                 self.position += 1
             if not self._consume_ascii_digits():
-                self._fail(f"invalid exponent in {name} duration", exponent_start)
+                self._fail("invalid exponent in eventually duration", exponent_start)
 
         text = self.source[delta_start:self.position]
         try:
             delta = float(text)
         except ValueError as error:
-            self._fail(f"invalid {name} duration {text!r}", delta_start)
+            self._fail(f"invalid eventually duration {text!r}", delta_start)
             raise AssertionError("unreachable") from error
         if not isfinite(delta) or delta < 0:
-            self._fail(f"invalid {name} duration {text!r}", delta_start)
-        return operator(delta, self._parse_unary())
+            self._fail(f"invalid eventually duration {text!r}", delta_start)
+        return Eventually(delta, self._parse_unary())
 
     def _parse_primary(self) -> Expression:
         self._skip_whitespace()
         if self._at_end:
             self._fail("expected an expression")
+
+        selection = self._try_parse_selection()
+        if selection is not None:
+            return selection
 
         window = self._try_parse_window()
         if window is not None:
@@ -212,11 +234,125 @@ class _Parser:
                 self.position = start
                 left = self._parse_term()
                 return self._parse_equality(left, start)
-            return Atom(name)
+            return Proposition(name)
 
         if self.source[self.position] == "[":
             self._fail("expected '_' or '^' after interval")
         self._fail(f"expected an expression, found {self._token_description()}")
+
+    def _try_parse_canonical_condition(self) -> Expression | None:
+        self._skip_whitespace()
+        start = self.position
+        if self._match_symbol("□") or self._match_temporal_keyword("always"):
+            operator = UniversalCondition
+            name = "universal condition"
+        elif self._match_symbol("◇") or self._match_temporal_keyword("eventually"):
+            operator = ExistentialCondition
+            name = "existential condition"
+        else:
+            self.position = start
+            return None
+        parameter = self._parse_optional_parameter(name)
+        return operator(parameter, self._parse_unary())
+
+    def _try_parse_selection(self) -> Expression | None:
+        self._skip_whitespace()
+        start = self.position
+        if self._match_symbol("⟨"):
+            closing = "⟩"
+        elif self._match_symbol("<"):
+            closing = ">"
+        else:
+            return None
+
+        try:
+            inside = self._parse_expression()
+            self._skip_whitespace()
+            outside = None
+            if self._match_symbol(","):
+                outside = self._parse_expression()
+            self._expect_symbol(closing, "expected a closing selection bracket")
+            restrictive = self._match_symbol("*")
+            if restrictive and outside is not None:
+                self._fail("binary selection cannot use the unary '*' marker")
+            parameter = self._parse_optional_parameter("selection")
+            if outside is not None:
+                return Selection(parameter, inside, outside)
+            operator = RestrictiveSelection if restrictive else VacuousSelection
+            return operator(parameter, inside)
+        except ParseError:
+            self.position = start
+            raise
+
+    def _match_temporal_infix(self):
+        self._skip_whitespace()
+        start = self.position
+        choices = (
+            ("until", Until, "until"),
+            ("unless", WeakUntil, "weak until"),
+            ("release", Release, "release"),
+        )
+        for keyword, operator, name in choices:
+            if self._match_temporal_keyword(keyword):
+                return operator, name
+            self.position = start
+        for token, operator, name in (
+            ("U", Until, "until"),
+            ("W", WeakUntil, "weak until"),
+            ("R", Release, "release"),
+        ):
+            if not self.source.startswith(token, self.position):
+                continue
+            end = self.position + 1
+            if end < len(self.source):
+                following = self.source[end]
+                if following == "_" or following.isspace() or following in "(<⟨!¬□◇`":
+                    self.position = end
+                    return operator, name
+                continue
+            self.position = end
+            return operator, name
+        self.position = start
+        return None
+
+    def _parse_optional_parameter(self, operator_name: str):
+        self._skip_whitespace()
+        if not self._match_symbol("_"):
+            return None
+        return self._parse_temporal_parameter(operator_name)
+
+    def _parse_temporal_parameter(self, operator_name: str):
+        self._skip_whitespace()
+        start = self.position
+        if self._at_end:
+            self._fail(f"expected a temporal parameter after {operator_name}", start)
+
+        if self.source[self.position] in "[(":
+            search = self.position + 1
+            while search < len(self.source) and self.source[search] not in ")]":
+                search += 1
+            if search >= len(self.source):
+                self._fail("unterminated temporal interval", start)
+            self.position = search + 1
+            if not self._at_end and self.source[self.position] == "+":
+                self.position += 1
+            text = self.source[start:self.position]
+        else:
+            while not self._at_end and self.source[self.position] not in "])":
+                character = self.source[self.position]
+                if character.isspace():
+                    break
+                self.position += 1
+            if self._at_end or self.source[self.position] not in "])":
+                self._fail("expected ']' or ')' after temporal duration", start)
+            self.position += 1
+            text = self.source[start:self.position]
+
+        try:
+            return coerce_temporal_parameter(text)
+        except (TypeError, ValueError) as error:
+            self._fail(f"invalid temporal parameter {text!r}", start)
+            raise AssertionError("unreachable") from error
 
     def _parse_equality(self, left: Term, start: int) -> Expression:
         operator = self._equality_operator()
@@ -237,13 +373,13 @@ class _Parser:
             self._fail("expected a signal name or natural number")
         return Signal(name)
 
-    def _parse_natural(self) -> Natural:
+    def _parse_natural(self) -> NaturalLiteral:
         self._skip_whitespace()
         start = self.position
         while not self._at_end and self._is_ascii_digit(self.source[self.position]):
             self.position += 1
         try:
-            return Natural(int(self.source[start:self.position]))
+            return NaturalLiteral(int(self.source[start:self.position]))
         except ValueError as error:
             self._fail("invalid natural number", start)
             raise AssertionError("unreachable") from error
@@ -327,11 +463,13 @@ class _Parser:
                 invalid_interval_at = start
                 search += 1
                 continue
+            if len(list(interval)) > 1:
+                self._fail("absolute temporal parameter must be connected", start)
 
             self.position = body_start + 1
             body = self._parse_expression()
             self._expect_symbol(")", "expected ')' to close interval expression")
-            operator = Restrict if marker == "_" else Guard
+            operator = RestrictiveSelection if marker == "_" else VacuousSelection
             return operator(interval, body)
 
         if self.source[start] == "[" and invalid_interval_at is not None:
@@ -343,10 +481,13 @@ class _Parser:
         if not stripped:
             self._fail("expected an interval", start)
         try:
-            return P.from_string(stripped, float)
+            interval = P.from_string(stripped, float)
         except (TypeError, ValueError) as error:
             self._fail(f"invalid interval {stripped!r}", start)
             raise AssertionError("unreachable") from error
+        if len(list(interval)) > 1:
+            self._fail("absolute temporal parameter must be connected", start)
+        return interval
 
     def _equality_operator(self) -> str | None:
         self._skip_whitespace()
@@ -386,6 +527,19 @@ class _Parser:
             return False
         if end < len(self.source) and (
             self.source[end] == "_" or ("a" + self.source[end]).isidentifier()
+        ):
+            return False
+        self.position = end
+        return True
+
+    def _match_temporal_keyword(self, keyword: str) -> bool:
+        self._skip_whitespace()
+        end = self.position + len(keyword)
+        if not self.source.startswith(keyword, self.position):
+            return False
+        if end < len(self.source) and (
+            self.source[end] != "_"
+            and ("a" + self.source[end]).isidentifier()
         ):
             return False
         self.position = end

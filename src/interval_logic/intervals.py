@@ -5,18 +5,6 @@ from __future__ import annotations
 import portion as P
 
 
-def erode_forward(interval: P.Interval, delta: float) -> P.Interval:
-    """Return starts whose closed ``[start, start + delta]`` lies in interval."""
-
-    if delta == 0:
-        return interval
-    result = P.empty()
-    for atom in interval:
-        upper = atom.upper if atom.upper == P.inf else atom.upper - delta
-        result |= P.from_data([(atom.left, atom.lower, upper, atom.right)])
-    return result
-
-
 def dilate_backward(interval: P.Interval, delta: float) -> P.Interval:
     """Return starts whose closed forward window intersects interval."""
 

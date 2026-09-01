@@ -4,19 +4,21 @@ from collections.abc import Callable
 
 from .ast import (
     And,
-    Atom,
+    Proposition,
     Bool,
     DerivedExpression,
     Equal,
     Eventually,
-    Exists,
+    ExistentialCondition,
     Expression,
-    ForAll,
-    Guard,
-    Hold,
+    Release,
+    Selection,
+    Until,
+    UniversalCondition,
+    VacuousSelection,
     Not,
     Or,
-    Restrict,
+    RestrictiveSelection,
     _coerce_expression,
 )
 from .errors import DerivedExpressionCycleError, DerivedExpressionError, ParseError
@@ -75,7 +77,7 @@ def _push_negation(expression: Expression, negated: bool = False) -> Expression:
     match expression:
         case Bool(value=value):
             return Bool(not value if negated else value)
-        case Atom() | Equal():
+        case Proposition() | Equal():
             return Not(expression) if negated else expression
         case Not(operand=operand):
             return _push_negation(operand, not negated)
@@ -85,24 +87,41 @@ def _push_negation(expression: Expression, negated: bool = False) -> Expression:
         case Or(operands=operands):
             operator = And if negated else Or
             return operator(_push_negation(item, negated) for item in operands)
-        case Restrict(interval=interval, body=body):
-            operator = Guard if negated else Restrict
+        case RestrictiveSelection(interval=interval, body=body):
+            operator = VacuousSelection if negated else RestrictiveSelection
             return operator(interval, _push_negation(body, negated))
-        case Guard(interval=interval, body=body):
-            operator = Restrict if negated else Guard
+        case VacuousSelection(interval=interval, body=body):
+            operator = RestrictiveSelection if negated else VacuousSelection
             return operator(interval, _push_negation(body, negated))
-        case ForAll(interval=interval, body=body):
-            operator = Exists if negated else ForAll
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            return Selection(
+                parameter,
+                _push_negation(inside, negated),
+                _push_negation(outside, negated),
+            )
+        case UniversalCondition(interval=interval, body=body):
+            operator = ExistentialCondition if negated else UniversalCondition
             return operator(interval, _push_negation(body, negated))
-        case Exists(interval=interval, body=body):
-            operator = ForAll if negated else Exists
+        case ExistentialCondition(interval=interval, body=body):
+            operator = UniversalCondition if negated else ExistentialCondition
             return operator(interval, _push_negation(body, negated))
-        case Hold(delta=delta, body=body):
-            result = Hold(delta, _push_negation(body, False))
-            return Not(result) if negated else result
-        case Eventually(delta=delta, body=body):
-            result = Eventually(delta, _push_negation(body, False))
-            return Not(result) if negated else result
+        case Eventually(parameter=parameter, body=body):
+            operator = UniversalCondition if negated else Eventually
+            return operator(parameter, _push_negation(body, negated))
+        case Until(parameter=parameter, left=left, right=right):
+            operator = Release if negated else Until
+            return operator(
+                parameter,
+                _push_negation(left, negated),
+                _push_negation(right, negated),
+            )
+        case Release(parameter=parameter, left=left, right=right):
+            operator = Until if negated else Release
+            return operator(
+                parameter,
+                _push_negation(left, negated),
+                _push_negation(right, negated),
+            )
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")
 
@@ -135,7 +154,7 @@ def _lower(expression: Expression, active: set[int], derived_depth: int) -> Expr
             active.remove(identity)
 
     match expression:
-        case Bool() | Atom() | Equal():
+        case Bool() | Proposition() | Equal():
             return expression
         case Not(operand=operand):
             return Not(_lower(operand, active, derived_depth))
@@ -143,17 +162,33 @@ def _lower(expression: Expression, active: set[int], derived_depth: int) -> Expr
             return And(_lower(item, active, derived_depth) for item in operands)
         case Or(operands=operands):
             return Or(_lower(item, active, derived_depth) for item in operands)
-        case Restrict(interval=interval, body=body):
-            return Restrict(interval, _lower(body, active, derived_depth))
-        case Guard(interval=interval, body=body):
-            return Guard(interval, _lower(body, active, derived_depth))
-        case ForAll(interval=interval, body=body):
-            return ForAll(interval, _lower(body, active, derived_depth))
-        case Exists(interval=interval, body=body):
-            return Exists(interval, _lower(body, active, derived_depth))
-        case Hold(delta=delta, body=body):
-            return Hold(delta, _lower(body, active, derived_depth))
-        case Eventually(delta=delta, body=body):
-            return Eventually(delta, _lower(body, active, derived_depth))
+        case RestrictiveSelection(interval=interval, body=body):
+            return RestrictiveSelection(interval, _lower(body, active, derived_depth))
+        case VacuousSelection(interval=interval, body=body):
+            return VacuousSelection(interval, _lower(body, active, derived_depth))
+        case Selection(parameter=parameter, inside=inside, outside=outside):
+            return Selection(
+                parameter,
+                _lower(inside, active, derived_depth),
+                _lower(outside, active, derived_depth),
+            )
+        case UniversalCondition(interval=interval, body=body):
+            return UniversalCondition(interval, _lower(body, active, derived_depth))
+        case ExistentialCondition(interval=interval, body=body):
+            return ExistentialCondition(interval, _lower(body, active, derived_depth))
+        case Eventually(parameter=parameter, body=body):
+            return Eventually(parameter, _lower(body, active, derived_depth))
+        case Until(parameter=parameter, left=left, right=right):
+            return Until(
+                parameter,
+                _lower(left, active, derived_depth),
+                _lower(right, active, derived_depth),
+            )
+        case Release(parameter=parameter, left=left, right=right):
+            return Release(
+                parameter,
+                _lower(left, active, derived_depth),
+                _lower(right, active, derived_depth),
+            )
         case _:
             raise TypeError(f"unsupported expression type: {type(expression).__name__}")

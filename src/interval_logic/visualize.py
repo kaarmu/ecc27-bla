@@ -9,7 +9,7 @@ from typing import Any
 import portion as P
 
 from .ast import Expression, _coerce_expression
-from .semantics import NaturalSignal, SignalValuation, Valuation, denote
+from .semantics import NaturalSignal, SignalValuation, PropositionValuation, satisfying_anchors
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class Timeline:
 
     def __str__(self) -> str:
         label_width = max(len(row.label) for row in self.rows)
-        heading = f"{'row':<{label_width}}  holds on"
+        heading = f"{'row':<{label_width}}  satisfying anchors"
         separator = f"{'-' * label_width}  {'-' * 8}"
         values = [
             f"{row.label:<{label_width}}  {row.interval}"
@@ -65,14 +65,14 @@ class Timeline:
 
 def timeline(
     expression: Expression | str,
-    valuation: Valuation,
+    valuation: PropositionValuation,
     universe: P.Interval,
     *,
     signals: SignalValuation | None = None,
     formula_label: str | None = None,
     width: int = 900,
 ) -> Timeline:
-    """Build an exact timeline for atom, signal, and formula denotations."""
+    """Build an exact timeline for proposition, signal, and formula truth sets."""
 
     expression = _coerce_expression(expression, "expression")
     if not isinstance(universe, P.Interval):
@@ -85,12 +85,14 @@ def timeline(
     if not isinstance(signals, Mapping):
         raise TypeError("signals must be a mapping")
 
-    truth = denote(expression, valuation, universe, signals=signals)
+    truth = satisfying_anchors(expression, valuation, universe, signals=signals)
     rows = [TimelineRow("Universe", universe, "universe")]
     for name in sorted(valuation):
         value = valuation[name]
         if not isinstance(value, P.Interval):
-            raise TypeError(f"valuation for atom {name!r} must be a portion.Interval")
+            raise TypeError(
+                f"valuation for proposition {name!r} must be a portion.Interval"
+            )
         rows.append(TimelineRow(name, value & universe))
     for name in sorted(signals):
         signal = signals[name]
