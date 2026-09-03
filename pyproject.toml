@@ -1,7 +1,7 @@
 [project]
 name = "interval-logic"
-version = "0.1.0"
-description = "Immutable interval logic with exact time-set semantics"
+version = "0.3.0"
+description = "Trajectory semantics with trace and symbolic reachability queries"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

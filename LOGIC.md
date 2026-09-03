@@ -1,7 +1,33 @@
 # Interval logic definition
 
-This file defines the interval-logic language and its trace-checking
-semantics.
+This file defines the interval-logic language and its semantics. There is one
+fundamental satisfaction relation,
+
+$$
+(\xi,t)\models\varphi,
+$$
+
+where $\xi$ is a trajectory and $t$ is physical time. Trace checking asks where
+a formula holds on one given trajectory. Reachability checking asks from which
+states some admissible trajectory satisfies it:
+
+$$
+\boxed{
+\text{trajectory satisfaction}
+\longrightarrow
+\begin{cases}
+\text{truth times on one trajectory},\\
+\text{initial states admitting a satisfying trajectory}.
+\end{cases}
+}
+$$
+
+The anchored mask denotation is retained as an additional observation because
+selection is observational rather than temporal-condition-forming. Its window
+constructs a time mask, but the duration and endpoint of a positive relative
+window are not observable through local satisfaction. Temporal requirements
+over a duration are expressed by conditions such as until, eventually, and
+always. The anchored mask denotation is not a second satisfaction semantics.
 
 ## Syntax
 
@@ -10,9 +36,9 @@ semantics.
 A numeric term is either a natural-number literal or a signal name:
 
 $$
-\tau ::= n \mid j,
-\qquad n\in\mathbb \Omega,
-\quad j: \mathbb R_{\geq0} \rightarrow \Omega.
+\tau ::= n \mid \textit{job},
+\qquad n\in\mathbb N_0,
+\quad \textit{job}:X\to\mathbb N_0.
 $$
 
 Atomic formulas are proposition names or equalities between numeric terms:
@@ -30,40 +56,34 @@ $\tau_1\neq\tau_2:=\neg(\tau_1=\tau_2)$.
 Every temporal operator accepts the same kinds of parameter:
 
 $$
-\rho ::= d] \mid d) \mid I \mid D^+,
+\rho ::= d] \mid d) \mid I,
 \qquad d\in\mathbb R_{\geq0}.
 $$
 
-Here $I\subseteq\mathbb R$ is an absolute interval and
-$D\subseteq\mathbb R_{\geq0}$ is a nonempty connected interval of relative
-offsets. The $+$ is part of the relative-interval syntax, not a separate
-operator. The one-sided relative forms are
+Here $I\subseteq\mathbb R_{\geq0}$ is an absolute interval. The one-sided
+relative forms denote
 
 $$
-d]:=[0,d]^+,
+d]:=[0,d],
 \qquad
-d):=[0,d)^+.
+d):=[0,d).
 $$
 
-Thus $d]$ includes the endpoint at offset $d$, whereas $d)$ excludes it.
-A bare duration $d$, if retained by the concrete syntax for compatibility, is
-shorthand for $d]$. Numeric signal literals remain natural numbers even
-though temporal durations are real-valued.
-
-An unmarked interval is absolute; an interval marked with $+$ is relative.
-General $D^+$ parameters are convenient surface syntax. They resolve directly
-in the semantics, although finite $D^+$ selections can also be reduced to the
-one-sided forms as shown below.
-
-A temporal parameter may be omitted. Omission is uniform syntactic sugar for
-the unbounded relative interval
+Thus $d]$ includes the endpoint at offset $d$, whereas $d)$ excludes it. In a
+temporal-parameter position, a bare duration $d$ is syntactic sugar for $d)$.
+For example,
 
 $$
-\rho_{\mathrm{default}}=[0,\infty)^+.
+\langle\varphi\rangle_3
+:=\langle\varphi\rangle_{3)}.
 $$
 
-It therefore ranges from the current anchor through the represented future of
-the trace. Omission is not a separate parameter kind.
+Numeric signal literals remain natural numbers even though temporal durations
+are real-valued.
+
+A temporal parameter may be omitted. Omission is meta-level sugar for the
+represented future from the current anchor; it does not add another form to
+the grammar.
 
 ### Formulas and temporal basis
 
@@ -71,8 +91,8 @@ The two fundamental temporal constructs have distinct roles:
 
 | Construct | Syntax | Role |
 | --- | --- | --- |
-| Selection | $\langle\varphi,\psi\rangle_\rho$ | Uses $\varphi$ inside the window and $\psi$ outside it. |
-| Progression | $\varphi\mathbin{\mathsf U_\rho}\psi$ | Requires a witness for $\psi$ and $\varphi$ along the preceding temporal prefix. |
+| Selection | $\langle\varphi,\psi\rangle_\rho$ | Constructs an anchored time mask, using $\varphi$ inside the parameter window and $\psi$ outside it. |
+| Condition | $\varphi\mathbin{\mathsf U_\rho}\psi$ | Makes a temporal assertion, requiring a witness for $\psi$ and $\varphi$ along the preceding temporal prefix. |
 
 A minimal grammar is
 
@@ -107,10 +127,6 @@ $$
 :=\langle\varphi,\bot\rangle_\rho.
 $$
 
-Accordingly, $\langle\varphi\rangle_\rho$ follows $\varphi$ inside the
-selected window and is true outside it, while
-$\langle\varphi\rangle_\rho^*$ follows $\varphi$ inside and is false outside.
-
 Existential and universal conditions are derived from strong until:
 
 $$
@@ -121,370 +137,416 @@ $$
 :=\neg\lozenge_\rho\neg\varphi.
 $$
 
-They are conditions rather than masks: for a fixed anchor their denotation is
-either all of $\mathbb I$ or none of it. An implementation may retain
-dedicated nodes for these derived forms.
-
-Parameter omission applies uniformly. In particular,
+Release is the derived dual
 
 $$
-\begin{aligned}
-\langle\varphi,\psi\rangle
-&:=\langle\varphi,\psi\rangle_{[0,\infty)^+}, &
-\varphi\mathbin{\mathsf U}\psi
-&:=\varphi\mathbin{\mathsf U_{[0,\infty)^+}}\psi,\\
-\square\varphi
-&:=\square_{[0,\infty)^+}\varphi, &
-\lozenge\varphi
-&:=\lozenge_{[0,\infty)^+}\varphi.
-\end{aligned}
-$$
-
-### Weak until and release
-
-For the no-witness branch of bounded weak until, the left operand must hold
-from the relative anchor through the upper bound, including or excluding that
-bound as specified by $\rho$. Define $\operatorname{span}(\rho)$ as follows:
-
-- $\operatorname{span}(I)=I$ for an absolute interval;
-- $\operatorname{span}$ leaves the one-sided forms $d]$ and $d)$ unchanged;
-- if $D^+$ has finite upper endpoint $d$, then
-  $\operatorname{span}(D^+)$ is $d]$ or $d)$ according as $D$ includes or
-  excludes $d$;
-- if $D^+$ is unbounded above, then
-  $\operatorname{span}(D^+)=[0,\infty)^+$.
-
-Weak until (also called *unless*) and release are then abbreviations:
-
-$$
-\begin{aligned}
-\varphi\mathbin{\mathsf W_\rho}\psi
-&:= (\varphi\mathbin{\mathsf U_\rho}\psi)
-   \lor\square_{\operatorname{span}(\rho)}\varphi,\\
 \varphi\mathbin{\mathsf R_\rho}\psi
-&:=\neg(\neg\varphi\mathbin{\mathsf U_\rho}\neg\psi).
-\end{aligned}
+:=\neg(\neg\varphi\mathbin{\mathsf U_\rho}\neg\psi).
 $$
 
-For a relative interval with a positive lower bound, the use of
-$\operatorname{span}(\rho)$ is essential: the no-witness branch starts at the
-anchor, not at that lower bound. The unparameterized forms use
-$[0,\infty)^+$.
+Weak until $\mathsf W$ (also called *unless*) is an optional convenience
+extension. It permits the right operand never to occur. Its no-witness branch
+uses an anchor-dependent horizon, so it is defined directly below rather than
+rewritten generally as until-or-always.
 
-### Finite $D^+$ selections as surface syntax
+Parameter omission applies uniformly to selection, until, the derived
+conditions, release, and optional weak until.
 
-Let $0\leq d_0\leq d$. All four endpoint variants of a finite relative
-selection can be constructed from one-sided selections:
+## Common trajectory semantics
 
-$$
-\begin{aligned}
-\langle\varphi\rangle_{[d_0,d]^+}
-&\equiv
-\langle\varphi\rangle_{d]}
-\lor\langle\top\rangle^*_{d_0)},\\
-\langle\varphi\rangle_{[d_0,d)^+}
-&\equiv
-\langle\varphi\rangle_{d)}
-\lor\langle\top\rangle^*_{d_0)},\\
-\langle\varphi\rangle_{(d_0,d]^+}
-&\equiv
-\langle\varphi\rangle_{d]}
-\lor\langle\top\rangle^*_{d_0]},\\
-\langle\varphi\rangle_{(d_0,d)^+}
-&\equiv
-\langle\varphi\rangle_{d)}
-\lor\langle\top\rangle^*_{d_0]}.
-\end{aligned}
-$$
+### Trajectories, states, and represented time
 
-The upper endpoint is supplied by $d]$ or $d)$; the lower prefix uses the
-complementary endpoint type. Every operator in each identity keeps the same
-anchor.
-
-These are selection identities only. In particular, a condition over $D^+$
-must resolve $D^+$ directly. Masking a larger condition, for example with an
-expression of the form
-$\square_{d]}\langle\varphi\rangle_{D^+}$, is not equivalent because the
-condition re-anchors its operand at every inspected time.
-
-## Trace-checking semantics
-
-The syntax does not prescribe a single verification method. The denotational
-semantics in this section checks a formula against a complete, known trace $w\in W$.
-Verification over symbolic or partially known behavior may use a different
-semantic domain while retaining the language.
-
-Fix an evaluation universe $\mathbb I\subseteq\mathbb R$, possibly dependent on $w$. The trace assigns
-each proposition $p$ a truth set $V_w(p)\subseteq\mathbb I$ and each numeric
-signal $j$ a piecewise-constant function
-$j:\mathbb I\to\mathbb N_0$.
-
-There are two distinct time roles:
-
-- $a\in\mathbb I$ is the **anchor time**, from which relative temporal
-  parameters are resolved;
-- $t\in\mathbb I$ is the **evaluation time** of a subformula.
-
-Every formula has an anchored denotation
-$\llbracket\varphi\rrbracket_a\subseteq\mathbb I$. Local truth is the
-diagonal of this family of denotations:
+Let $X$ be a state domain. A trajectory is a physical-time function
 
 $$
-t\models\varphi
-\quad\Longleftrightarrow\quad
-t\in\llbracket\varphi\rrbracket_t.
+\xi:\mathbb R_{\geq0}\to X.
 $$
 
-The diagonal definition is what makes a relative temporal operator nested
-inside a condition resolve from each time inspected by that condition.
+For the signal language, a state carries the current signal values, so one may
+write
 
-### Temporal-parameter resolution
+$$
+\xi(t)=(\textit{job}_1(t),\ldots,\textit{job}_n(t)).
+$$
 
-At anchor $a$, a temporal parameter resolves to
+The atomic valuation maps each proposition to the states where it is true, and
+each signal name denotes its projection
+$\textit{job}:X\to\mathbb N_0$. Term evaluation along a trajectory is
+
+$$
+\llbracket n\rrbracket_{\xi,t}=n,
+\qquad
+\llbracket \textit{job}\rrbracket_{\xi,t}=\textit{job}(\xi(t)).
+$$
+
+For each trace or reachability query, fix a represented evaluation universe
+$\mathbb I\subseteq\mathbb R_{\geq0}$. The same $\mathbb I$ is shared by every
+trajectory considered by that query. Each trajectory remains defined on all
+physical time, but only times in $\mathbb I$ are inspected. Local satisfaction
+is queried only at $t\in\mathbb I$, and an anchored mask denotation is queried
+only at $a\in\mathbb I$.
+
+### Temporal windows
+
+Every temporal construct uses the same represented, future-directed window:
 
 $$
 W_\rho(a)=
 \begin{cases}
-[a,a+d] & \rho=d],\\
-[a,a+d) & \rho=d),\\
-I & \rho=I,\\
-a+D=\{a+s\mid s\in D\} & \rho=D^+.
+[a,a+d]\cap\mathbb I, & \rho=d],\\
+[a,a+d)\cap\mathbb I, & \rho=d),\\
+I\cap[a,\infty)\cap\mathbb I, & \rho=I.
 \end{cases}
 $$
 
-For example,
+When the parameter is omitted, use
 
 $$
-\begin{aligned}
-W_{3]}(a)&=[a,a+3], &
-W_{3)}(a)&=[a,a+3),\\
-W_{[b,c]}(a)&=[b,c], &
-W_{(d_0,d]^+}(a)&=(a+d_0,a+d].
-\end{aligned}
+W(a):=[a,\infty)\cap\mathbb I.
 $$
 
-Only represented times are inspected, so every use of a resolved window below
-intersects it with $\mathbb I$. For an omitted parameter,
+This is a convention for omitted syntax, not another value of $\rho$.
+In particular,
 
 $$
-W_{[0,\infty)^+}(a)=[a,\infty).
+\boxed{W_I(a)=I\cap[a,\infty)\cap\mathbb I.}
 $$
 
-Endpoint types are preserved by relative translation.
+Absolute selection, until, eventually, always, release, and weak until all
+therefore use the same *from now onward* interpretation. Historical trace
+inspection is expressed by evaluating from an earlier anchor, not by giving
+selection a backward-looking window.
 
-### Atoms and Boolean connectives
-
-Time is implicit in an equality: signals are read at the evaluation time, and
-a literal is constant, so $n(t)=n$. Thus
-
-$$
-\begin{aligned}
-\llbracket p\rrbracket_a &= V(p),\\
-\llbracket\tau_1=\tau_2\rrbracket_a
-&=\{t\in\mathbb I\mid\tau_1(t)=\tau_2(t)\}.
-\end{aligned}
-$$
-
-The Boolean clauses are the usual set operations:
+The zero-duration windows are
 
 $$
-\begin{aligned}
-\llbracket\top\rrbracket_a &= \mathbb I, &
-\llbracket\bot\rrbracket_a &= \varnothing,\\
-\llbracket\neg\varphi\rrbracket_a
-&=\mathbb I\setminus\llbracket\varphi\rrbracket_a, &
-\llbracket\varphi\land\psi\rrbracket_a
-&=\llbracket\varphi\rrbracket_a
-  \cap\llbracket\psi\rrbracket_a,\\
-\llbracket\varphi\lor\psi\rrbracket_a
-&=\llbracket\varphi\rrbracket_a
-  \cup\llbracket\psi\rrbracket_a.
-\end{aligned}
-$$
-
-### Selection: an anchor-preserving mask
-
-The binary selector uses its first operand inside the represented window and
-its second operand outside it:
-
-$$
-\begin{aligned}
-\llbracket\langle\varphi,\psi\rangle_\rho\rrbracket_a
-={}&\bigl(W_\rho(a)\cap\mathbb I
-          \cap\llbracket\varphi\rrbracket_a\bigr)\\
-&\cup\bigl((\mathbb I\setminus W_\rho(a))
-          \cap\llbracket\psi\rrbracket_a\bigr).
-\end{aligned}
-$$
-
-Selection preserves the anchor: its operands use
-$\llbracket\varphi\rrbracket_a$ and
-$\llbracket\psi\rrbracket_a$. It does not re-anchor them separately at every
-point of the mask.
-
-The unary cases are therefore
-
-$$
-\begin{aligned}
-\llbracket\langle\varphi\rangle_\rho\rrbracket_a
-&=(\mathbb I\setminus W_\rho(a))
-  \cup\bigl(W_\rho(a)\cap\mathbb I
-            \cap\llbracket\varphi\rrbracket_a\bigr),\\
-\llbracket\langle\varphi\rangle_\rho^*\rrbracket_a
-&=W_\rho(a)\cap\mathbb I
-  \cap\llbracket\varphi\rrbracket_a.
-\end{aligned}
-$$
-
-For an absolute interval $I$, these reduce to a mask by
-$I\cap\mathbb I$. In particular, $\langle\varphi\rangle_I$ is true outside
-$I$; it is not a global assertion that $\varphi$ holds throughout $I$.
-
-### Conditions: global values with re-anchored operands
-
-The universal condition is globally true exactly when its operand is locally
-true at every represented time in the window:
-
-$$
-\llbracket\square_\rho\varphi\rrbracket_a=
-\begin{cases}
-\mathbb I
-& \forall t\in W_\rho(a)\cap\mathbb I:\ t\models\varphi,\\
-\varnothing & \text{otherwise.}
-\end{cases}
-$$
-
-Likewise,
-
-$$
-\llbracket\lozenge_\rho\varphi\rrbracket_a=
-\begin{cases}
-\mathbb I
-& \exists t\in W_\rho(a)\cap\mathbb I:\ t\models\varphi,\\
-\varnothing & \text{otherwise.}
-\end{cases}
-$$
-
-The result remains global for the fixed anchor, but the operand is re-anchored
-at each inspected $t$. For example,
-
-$$
-\square_{5]}\lozenge_{2]}p
-$$
-
-means
-
-$$
-\forall t\in[a,a+5]\ \exists u\in[t,t+2]:\ u\models p.
-$$
-
-For an absolute interval $I$, the outer anchor disappears from the condition:
-
-$$
-\llbracket\square_I\varphi\rrbracket_a=\mathbb I
-\quad\Longleftrightarrow\quad
-\forall t\in I\cap\mathbb I:\ t\models\varphi.
-$$
-
-Consequently, if the absolute condition holds, then
-
-$$
-\llbracket p\land\square_I q\rrbracket_a
-=\llbracket p\rrbracket_a,
-$$
-
-including at evaluation times before $I$. This works because
-$\square_I q$ is a global value, not an interval mask. The corresponding
-global assertion is simply $\square_I\varphi$, not
-$\langle\square_I\varphi\rangle_I$.
-
-An empty window makes $\square_\rho\varphi$ true and
-$\lozenge_\rho\varphi$ false. The closed zero-duration window $0]$ contains
-the anchor; the half-open zero-duration window $0)$ is empty.
-
-### Strong until
-
-Strong until is also globally valued. Its right operand supplies a witness,
-and both operands are evaluated locally at the times where their truth is
-required.
-
-For a witness $u\in W_\rho(a)\cap\mathbb I$, define the preceding obligation
-set
-
-$$
-P_\rho(a,u)=
-\begin{cases}
-[a,u)\cap\mathbb I
-& \rho\text{ is relative},\\
-I\cap(-\infty,u)\cap\mathbb I
-& \rho=I\text{ is absolute}.
-\end{cases}
-$$
-
-The absolute case orders points within the absolute interval itself. The
-relative case uses the anchor, not the lower endpoint of the witness window.
-Now
-
-$$
-\llbracket\varphi\mathbin{\mathsf U_\rho}\psi\rrbracket_a=
-\begin{cases}
-\mathbb I
-& \begin{aligned}
-  \exists u\in W_\rho(a)\cap\mathbb I:\quad
-  &u\models\psi\ \land{}\\[-2pt]
-  &\forall t\in P_\rho(a,u):\ t\models\varphi,
-  \end{aligned}\\
-\varnothing & \text{otherwise.}
-\end{cases}
-$$
-
-The witness itself need not satisfy $\varphi$. For a relative bounded until
-
-$$
-\varphi\mathbin{\mathsf U_{[d_0,d]^+}}\psi,
-$$
-
-the witness lies in $[a+d_0,a+d]$, but $\varphi$ must hold throughout
-$[a,u)\cap\mathbb I$. The lower bound $d_0$ restricts the witness time; it
-does not postpone the left-operand obligation. In particular, this is not
-equivalent to
-$\varphi\mathbin{\mathsf U}\lozenge_{[d_0,d]^+}\psi$.
-
-The definition immediately gives
-
-$$
-\top\mathbin{\mathsf U_\rho}\varphi
-\equiv\lozenge_\rho\varphi.
-$$
-
-For weak until, the no-witness branch uses
-$\operatorname{span}(\rho)$ as defined above. Consequently,
-
-$$
-\varphi\mathbin{\mathsf W_\rho}\bot
-\equiv\square_{\operatorname{span}(\rho)}\varphi,
+W_{0]}(a)=\{a\},
 \qquad
-\bot\mathbin{\mathsf R_\rho}\varphi
-\equiv\square_\rho\varphi.
+W_{0)}(a)=\varnothing.
 $$
 
-### Satisfaction and normalization
+Because a bare duration denotes $d)$, bare $0$ also denotes the empty window.
 
-A formula is checked from anchor $a$ by evaluating its local truth there:
+### Local satisfaction
+
+Local truth is fundamental. Atoms and Boolean connectives satisfy
 
 $$
-a\models\varphi
+\begin{aligned}
+(\xi,t)&\models\top,\\
+(\xi,t)&\models p
+&&\Longleftrightarrow \xi(t)\in V(p),\\
+(\xi,t)&\models\tau_1=\tau_2
+&&\Longleftrightarrow
+\llbracket\tau_1\rrbracket_{\xi,t}
+=\llbracket\tau_2\rrbracket_{\xi,t},\\
+(\xi,t)&\models\neg\varphi
+&&\Longleftrightarrow (\xi,t)\not\models\varphi,\\
+(\xi,t)&\models\varphi\land\psi
+&&\Longleftrightarrow
+(\xi,t)\models\varphi\ \land\ (\xi,t)\models\psi.
+\end{aligned}
+$$
+
+The derived Boolean connectives have their usual truth conditions.
+
+Selection chooses a branch at the time where its local truth is inspected:
+
+$$
+\boxed{
+(\xi,t)\models\langle\varphi,\psi\rangle_\rho
 \quad\Longleftrightarrow\quad
-a\in\llbracket\varphi\rrbracket_a.
+\begin{cases}
+(\xi,t)\models\varphi, & t\in W_\rho(t),\\
+(\xi,t)\models\psi, & t\notin W_\rho(t).
+\end{cases}
+}
 $$
 
-Sweeping the anchor over the trace produces the local truth set
-$\{a\in\mathbb I\mid a\models\varphi\}$. The full anchored denotation remains
-useful because selections are set-valued masks, whereas conditions and until
-formulas return only $\mathbb I$ or $\varnothing$ for a fixed anchor.
+The omitted form uses $W(t)=[t,\infty)\cap\mathbb I$ and therefore selects the
+inside operand. The same local clause applies whenever a selector is nested
+inside a temporal condition: it is re-anchored at the inspected time $t$.
 
-Negation passes through the binary selector componentwise. The unary
-selection, condition, and until/release dualities follow:
+Strong until uses the temporal window:
+
+$$
+\boxed{
+(\xi,a)\models\varphi\mathbin{\mathsf U_\rho}\psi
+\quad\Longleftrightarrow\quad
+\exists \tau\in W_\rho(a):
+\left(
+(\xi,\tau)\models\psi
+\land
+\forall t\in[a,\tau)\cap\mathbb I:\ (\xi,t)\models\varphi
+\right).
+}
+$$
+
+The parameter restricts the witness time. The left operand is required from
+the anchor up to, but not including, the witness; the witness itself need not
+satisfy the left operand. For omission, use $W(a)$.
+
+The derived conditions therefore satisfy
+
+$$
+\begin{aligned}
+(\xi,a)\models\lozenge_\rho\varphi
+&\Longleftrightarrow
+\exists t\in W_\rho(a):\ (\xi,t)\models\varphi,\\
+(\xi,a)\models\square_\rho\varphi
+&\Longleftrightarrow
+\forall t\in W_\rho(a):\ (\xi,t)\models\varphi.
+\end{aligned}
+$$
+
+An empty temporal window makes $\square_\rho\varphi$ true and
+$\lozenge_\rho\varphi$ false.
+
+For optional weak until, define the prefix horizon
+
+$$
+H_\rho(a)
+:=\left\{
+t\in\mathbb I:
+\exists \tau\in W_\rho(a),\ a\leq t\leq \tau
+\right\}.
+$$
+
+Then
+
+$$
+\boxed{
+(\xi,a)\models\varphi\mathbin{\mathsf W_\rho}\psi
+\quad\Longleftrightarrow\quad
+(\xi,a)\models\varphi\mathbin{\mathsf U_\rho}\psi
+\lor
+\forall t\in H_\rho(a):\ (\xi,t)\models\varphi.
+}
+$$
+
+For $d]$ and $d)$, the horizon is respectively
+$[a,a+d]\cap\mathbb I$ and $[a,a+d)\cap\mathbb I$. For an absolute interval,
+it extends from $a$ to the upper edge of $W_I(a)$, with that interval's
+endpoint convention. For omission,
+$H(a)=[a,\infty)\cap\mathbb I$.
+
+For a relative closed window only, the familiar convenience law holds:
+
+$$
+\varphi\mathbin{\mathsf W_{d]}}\psi
+\equiv
+(\varphi\mathbin{\mathsf U_{d]}}\psi)
+\lor\square_{d]}\varphi.
+$$
+
+The analogous absolute-interval rewrite is generally false. If $a=3$ and
+$I=[5,8)$, the no-witness branch requires $\varphi$ throughout
+$[3,8)\cap\mathbb I$, not merely throughout $W_I(3)$.
+
+### Anchored mask denotation
+
+For one trajectory, define its local truth-time set
+
+$$
+\operatorname{Sat}_\xi(\varphi)
+:=\{t\in\mathbb I:(\xi,t)\models\varphi\}.
+$$
+
+The anchored mask denotation
+$\llbracket\varphi\rrbracket_{\xi,a}\subseteq\mathbb I$ additionally preserves
+the time mask produced by selection. Atoms and Boolean operators use the usual
+set operations:
+
+$$
+\begin{aligned}
+\llbracket\top\rrbracket_{\xi,a}&=\mathbb I, &
+\llbracket\bot\rrbracket_{\xi,a}&=\varnothing,\\
+\llbracket p\rrbracket_{\xi,a}&=\operatorname{Sat}_\xi(p), &
+\llbracket\tau_1=\tau_2\rrbracket_{\xi,a}
+&=\operatorname{Sat}_\xi(\tau_1=\tau_2),\\
+\llbracket\neg\varphi\rrbracket_{\xi,a}
+&=\mathbb I\setminus\llbracket\varphi\rrbracket_{\xi,a}, &
+\llbracket\varphi\land\psi\rrbracket_{\xi,a}
+&=\llbracket\varphi\rrbracket_{\xi,a}
+\cap\llbracket\psi\rrbracket_{\xi,a}.
+\end{aligned}
+$$
+
+The anchored mask denotation of a binary selector is
+
+$$
+\boxed{
+\llbracket\langle\varphi,\psi\rangle_\rho\rrbracket_{\xi,a}
+=
+\bigl(W_\rho(a)\cap\operatorname{Sat}_\xi(\varphi)\bigr)
+\cup
+\bigl((\mathbb I\setminus W_\rho(a))
+\cap\operatorname{Sat}_\xi(\psi)\bigr).
+}
+$$
+
+The unary cases are
+
+$$
+\begin{aligned}
+\llbracket\langle\varphi\rangle_\rho\rrbracket_{\xi,a}
+&=(\mathbb I\setminus W_\rho(a))
+\cup(W_\rho(a)\cap\operatorname{Sat}_\xi(\varphi)),\\
+\llbracket\langle\varphi\rangle_\rho^*\rrbracket_{\xi,a}
+&=W_\rho(a)\cap\operatorname{Sat}_\xi(\varphi).
+\end{aligned}
+$$
+
+Every temporal condition $C$ is globally valued at a fixed anchor:
+
+$$
+\llbracket C\rrbracket_{\xi,a}
+=
+\begin{cases}
+\mathbb I, & (\xi,a)\models C,\\
+\varnothing, & (\xi,a)\not\models C.
+\end{cases}
+$$
+
+Strong until, eventually, always, release, and optional weak until are
+conditions. Boolean combinations are evaluated compositionally by the set
+clauses above, so a Boolean formula containing a selector need not be globally
+valued.
+
+The anchored mask denotation is consistent with the fundamental satisfaction
+relation on its diagonal:
+
+$$
+(\xi,t)\models\varphi
+\quad\Longleftrightarrow\quad
+t\in\llbracket\varphi\rrbracket_{\xi,t}.
+$$
+
+This is a consequence of the clauses, not the definition of local truth.
+
+## Trace checking
+
+Trace checking fixes one complete known trajectory $\xi$. Its two outputs are
+
+$$
+\begin{aligned}
+\operatorname{satisfying\_times}(\varphi,\xi)
+&=\operatorname{Sat}_\xi(\varphi),\\
+\operatorname{denote}(\varphi,\xi,a)
+&=\llbracket\varphi\rrbracket_{\xi,a}.
+\end{aligned}
+$$
+
+The first answers where the formula is locally true. The second returns the
+formula's anchored mask denotation and therefore preserves a selector's
+complete anchored time mask.
+
+### Selection and re-anchoring
+
+Absolute selection uses the same future-directed window as every temporal
+construct. At anchor $a$, $\langle\varphi\rangle_I$ follows $\varphi$ on
+$I\cap[a,\infty)\cap\mathbb I$ and is true elsewhere. It remains a mask rather
+than a persistence requirement; that requirement is $\square_I\varphi$.
+
+For every $d>0$, the anchor lies in both $W_{d)}(a)$ and $W_{d]}(a)$. Hence,
+under local satisfaction,
+
+$$
+\boxed{
+d>0
+\quad\Longrightarrow\quad
+\langle\varphi,\psi\rangle_{d)}
+\equiv
+\langle\varphi,\psi\rangle_{d]}
+\equiv
+\varphi.
+}
+$$
+
+The duration and endpoint still change the full anchored mask denotation, but
+they cannot be observed through local satisfaction. Selection constructs a
+mask; it does not assert persistence over that mask. Consequently, trace and
+reachability queries derived from local satisfaction cannot distinguish the
+positive relative durations either. For example,
+
+$$
+\begin{aligned}
+\langle p\rangle_{1)}&\equiv\langle p\rangle_{100)},\\
+\square_{5]}\langle p\rangle_{3)}&\equiv\square_{5]}p,\\
+\lozenge_{5]}\langle p\rangle_{3)}&\equiv\lozenge_{5]}p.
+\end{aligned}
+$$
+
+The nested examples work because the selector is re-anchored at every
+inspected time. An absolute selector may likewise choose different branches
+at different inspected times. If the outer anchor precedes $3$, then
+
+$$
+\square_{[3,10]}\langle p,q\rangle_{[5,8)}
+$$
+
+requires $q$ on $[3,5)$, $p$ on $[5,8)$, and $q$ on $[8,10]$, restricted in
+each case to represented time.
+
+### Absolute windows
+
+Every absolute temporal construct uses $W_I(a)$. Thus
+$\square_{[5,8)}\varphi$ at $a=6$ checks $[6,8)\cap\mathbb I$, while at $a=3$
+it checks $[5,8)\cap\mathbb I$. If $a\geq8$, the temporal window is empty and
+the universal condition is vacuously true.
+
+At $a=6$, an absolute selector with parameter $[5,8)$ similarly masks only
+$[6,8)\cap\mathbb I$; represented times before $6$ take its outside branch.
+To inspect the earlier part of an absolute interval, evaluate from an earlier
+anchor.
+
+For strong until, if $a=3$ and $I=[5,8)$, then
+$\varphi\mathbin{\mathsf U_I}\psi$ requires a $\psi$ witness in
+$[5,8)\cap\mathbb I$ and requires $\varphi$ from $3$ until that witness.
+
+### Zero-duration laws
+
+The endpoint convention yields
+
+$$
+\begin{array}{c|cc}
+ & 0] & 0) \\ \hline
+\lozenge_\rho\varphi
+ & \varphi & \bot \\
+\square_\rho\varphi
+ & \varphi & \top \\
+\varphi\mathbin{\mathsf U_\rho}\psi
+ & \psi & \bot \\
+\varphi\mathbin{\mathsf R_\rho}\psi
+ & \psi & \top
+\end{array}
+$$
+
+For optional weak until,
+
+$$
+\varphi\mathbin{\mathsf W_{0]}}\psi
+\equiv\varphi\lor\psi,
+\qquad
+\varphi\mathbin{\mathsf W_{0)}}\psi
+\equiv\top.
+$$
+
+For selection at its own anchor,
+
+$$
+\begin{aligned}
+(\xi,a)\models\langle\varphi,\psi\rangle_{0]}
+&\Longleftrightarrow (\xi,a)\models\varphi,\\
+(\xi,a)\models\langle\varphi,\psi\rangle_{0)}
+&\Longleftrightarrow (\xi,a)\models\psi.
+\end{aligned}
+$$
+
+### Negation dualities
+
+Negation passes through a binary selector componentwise. The unary selection,
+condition, and until/release dualities are
 
 $$
 \begin{aligned}
@@ -505,43 +567,182 @@ $$
 \end{aligned}
 $$
 
-## Charging-station example
+## Reachability checking
 
-Consider one charging station with two charging points. Let
+### Systems and existential state satisfaction
 
-$$
-j_1,j_2:\mathbb I\to\mathbb N_0
-$$
-
-be their job-allocation signals, where $0$ means *no job* and every positive
-number is a job ID. Time is implicit in an atomic equality:
+Let
 
 $$
-\llbracket j_1=0\rrbracket_a
-=\{t\in\mathbb I\mid j_1(t)=0\}.
+\Sigma=(X,\Xi,V),
 $$
 
-Thus $t\models j_1=0$ says exactly that charging point 1 is unallocated at
-time $t$. For example,
+where $X$ is the invariant-constrained state space, $V$ is the atomic
+interpretation used above, and $\Xi(x,a)$ is the family of system trajectories
+with $\xi(a)=x$. Reachability quantifies over the same trajectories and the
+same satisfaction relation:
+
+$$
+\boxed{
+\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)
+:=
+\left\{
+x\in X:
+\exists \xi\in\Xi(x,a),\ (\xi,a)\models\varphi
+\right\}.
+}
+$$
+
+This is the true existential state satisfaction set. For a queried initial
+set $X_0\subseteq X$, existential reachability succeeds exactly when
+
+$$
+X_0\cap\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)
+\neq\varnothing.
+$$
+
+A future universal extension may analogously quantify over every trajectory,
+but it is not part of the first backend.
+
+A `StateSet` denotes a subset of $X$. It is fundamentally multidimensional and
+may preserve relations between signal coordinates. A
+one-dimensional time interval is not a general `StateSet`. All state-set
+operations are relative to $X$.
+
+The output domains are distinct: `denote` returns an anchored mask denotation
+as a `TimeSet`, whereas existential state satisfaction returns a `StateSet`:
 
 $$
 \begin{aligned}
-\langle j_1=0\rangle_I
-&\quad\text{requires point 1 to be free inside }I
-\text{ and is true outside }I,\\
-\langle j_1=0\rangle_I^*
-&\quad\text{selects the times in }I\text{ when point 1 is free},\\
-\lozenge_I(j_1=0)
-&\quad\text{means point 1 is free sometime during }I,\\
-(j_1\neq0)\mathbin{\mathsf U_I}(j_1=0)
-&\quad\text{means point 1 remains occupied within }I
-\text{ until it becomes free there},\\
-\square_I((j_1=0)\land(j_2=0))
-&\quad\text{means both points are free throughout }I,\\
-\square_I\bigl((j_1\neq j_2)\lor((j_1=0)\land(j_2=0))\bigr)
-&\quad\text{forbids assigning the same nonzero job to both points during }I.
+\operatorname{denote}(\varphi,\xi,a)&\longrightarrow\mathrm{TimeSet},\\
+\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)
+&\in\mathrm{StateSet}.
 \end{aligned}
 $$
 
-The first formula is deliberately a mask. The global assertion that point 1
-is free throughout $I$ is $\square_I(j_1=0)$.
+### Reachability operators for state predicates
+
+For state sets $A,B\subseteq X$, define constrained backward reachability by
+
+$$
+\boxed{
+\mathcal R_{\rho,a}(B;A)
+:=
+\left\{
+x\in X:
+\begin{array}{l}
+\exists \xi\in\Xi(x,a),\\
+\exists \tau\in W_\rho(a) : \xi(\tau)\in B,\\
+\forall t\in[a,\tau)\cap\mathbb I:\ \xi(t)\in A
+\end{array}
+\right\}.
+}
+$$
+
+Define existential invariance by
+
+$$
+\boxed{
+\mathcal I_{\rho,a}(A)
+:=
+\left\{
+x\in X:
+\exists \xi\in\Xi(x,a),
+\forall t\in W_\rho(a) :\ \xi(t)\in A
+\right\}.
+}
+$$
+
+For an omitted temporal parameter, write $\mathcal R_a(B;A)$ and
+$\mathcal I_a(A)$ and use the omitted window $W(a)$.
+
+For state predicates $\alpha,\beta$ with truth sets $A,B$, the core TLT
+correspondence is
+
+$$
+\begin{array}{c|c}
+\text{formula} & \text{trajectory-defined state set} \\ \hline
+\alpha\mathbin{\mathsf U_\rho}\beta
+& \mathcal R_{\rho,a}(B;A) \\
+\lozenge_\rho\beta
+& \mathcal R_{\rho,a}(B;X) \\
+\square_\rho\alpha
+& \mathcal I_{\rho,a}(A)
+\end{array}
+$$
+
+These are computational correspondences derived from the common satisfaction
+relation; they do not redefine until, eventually, or always. For temporal
+operands, the defining state satisfaction set still quantifies over one common
+trajectory. Replacing operands prematurely by independently computed state
+sets may lose that correlation.
+
+## Charging-station example
+Consider one charging station with $n$ charging points. Its state space is
+
+$$
+X
+=\left\{
+x\in\mathbb N_0^n:
+\bigwedge_{1\leq i<k\leq n}
+\left(
+x_i\neq x_k
+\lor
+((x_i=0)\land(x_k=0))
+\right)
+\right\}.
+$$
+
+This is an all-different constraint on nonzero values, not strict
+`AllDifferent`: a state with several zero coordinates belongs to $X$.
+
+An allocation trajectory is the vector-valued signal
+
+$$
+\xi=(\textit{job}_1,\ldots,\textit{job}_n):
+\mathbb R_{\geq0}\to X\subseteq\mathbb N_0^n,
+$$
+
+where $\textit{job}_i(t)=0$ means that charging point $i$ is unallocated at
+time $t$, and every positive value is a job ID. The state observation denoted
+by $\textit{job}_i$ is the coordinate map $x\mapsto x_i$. Hence
+
+$$
+(\xi,t)\models \textit{job}_1=0
+\quad\Longleftrightarrow\quad
+\textit{job}_1(t)=0,
+$$
+
+so charging point 1 is unallocated at $t$. Examples include
+
+$$
+\begin{aligned}
+\langle \textit{job}_1=0\rangle_I
+&\quad\text{follows }\textit{job}_1=0\text{ inside }W_I(a)
+\text{ and is true outside }W_I(a),\\
+\langle \textit{job}_1=0\rangle_I^*
+&\quad\text{selects the represented times in }W_I(a)
+\text{ when point 1 is free},\\
+\lozenge_I(\textit{job}_1=0)
+&\quad\text{requires point 1 to be free sometime in }W_I(a),\\
+(\textit{job}_1\neq0)\mathbin{\mathsf U_I}(\textit{job}_1=0)
+&\quad\text{requires point 1 to stay occupied until it becomes free},\\
+\square_I((\textit{job}_1=0)\land(\textit{job}_2=0))
+&\quad\text{requires both points to be free throughout }W_I(a).
+\end{aligned}
+$$
+
+For reachability, let
+
+$$
+B_1:=\{x\in X:x_1=0\}.
+$$
+
+Then
+
+$$
+\operatorname{Sat}_{\Sigma}^{\exists}
+(\lozenge(\textit{job}_1=0),a)
+=
+\mathcal R_a(B_1;X).
+$$
