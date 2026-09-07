@@ -144,13 +144,8 @@ $$
 :=\neg(\neg\varphi\mathbin{\mathsf U_\rho}\neg\psi).
 $$
 
-Weak until $\mathsf W$ (also called *unless*) is an optional convenience
-extension. It permits the right operand never to occur. Its no-witness branch
-uses an anchor-dependent horizon, so it is defined directly below rather than
-rewritten generally as until-or-always.
-
 Parameter omission applies uniformly to selection, until, the derived
-conditions, release, and optional weak until.
+conditions, and release.
 
 ## Common trajectory semantics
 
@@ -212,7 +207,7 @@ $$
 \boxed{W_I(a)=I\cap[a,\infty)\cap\mathbb I.}
 $$
 
-Absolute selection, until, eventually, always, release, and weak until all
+Absolute selection, until, eventually, always, and release all
 therefore use the same *from now onward* interpretation. Historical trace
 inspection is expressed by evaluating from an earlier anchor, not by giving
 selection a backward-looking window.
@@ -302,47 +297,6 @@ $$
 An empty temporal window makes $\square_\rho\varphi$ true and
 $\lozenge_\rho\varphi$ false.
 
-For optional weak until, define the prefix horizon
-
-$$
-H_\rho(a)
-:=\left\{
-t\in\mathbb I:
-\exists \tau\in W_\rho(a),\ a\leq t\leq \tau
-\right\}.
-$$
-
-Then
-
-$$
-\boxed{
-(\xi,a)\models\varphi\mathbin{\mathsf W_\rho}\psi
-\quad\Longleftrightarrow\quad
-(\xi,a)\models\varphi\mathbin{\mathsf U_\rho}\psi
-\lor
-\forall t\in H_\rho(a):\ (\xi,t)\models\varphi.
-}
-$$
-
-For $d]$ and $d)$, the horizon is respectively
-$[a,a+d]\cap\mathbb I$ and $[a,a+d)\cap\mathbb I$. For an absolute interval,
-it extends from $a$ to the upper edge of $W_I(a)$, with that interval's
-endpoint convention. For omission,
-$H(a)=[a,\infty)\cap\mathbb I$.
-
-For a relative closed window only, the familiar convenience law holds:
-
-$$
-\varphi\mathbin{\mathsf W_{d]}}\psi
-\equiv
-(\varphi\mathbin{\mathsf U_{d]}}\psi)
-\lor\square_{d]}\varphi.
-$$
-
-The analogous absolute-interval rewrite is generally false. If $a=3$ and
-$I=[5,8)$, the no-witness branch requires $\varphi$ throughout
-$[3,8)\cap\mathbb I$, not merely throughout $W_I(3)$.
-
 ### Anchored mask denotation
 
 For one trajectory, define its local truth-time set
@@ -408,7 +362,7 @@ $$
 \end{cases}
 $$
 
-Strong until, eventually, always, release, and optional weak until are
+Strong until, eventually, always, and release are
 conditions. Boolean combinations are evaluated compositionally by the set
 clauses above, so a Boolean formula containing a selector need not be globally
 valued.
@@ -506,7 +460,9 @@ $[5,8)\cap\mathbb I$ and requires $\varphi$ from $3$ until that witness.
 
 ### Zero-duration laws
 
-The endpoint convention yields
+Under local satisfaction, the endpoint convention yields the following
+equivalences. Each entry has the same local truth as the formula in its row
+with the indicated parameter.
 
 $$
 \begin{array}{c|cc}
@@ -522,17 +478,20 @@ $$
 \end{array}
 $$
 
-For optional weak until,
+These reductions preserve local satisfaction and its derived truth-time and
+existential state satisfaction sets. They need not preserve anchored mask
+denotations: a temporal condition is globally valued at its anchor, whereas
+its reduced operand may have a varying truth-time set. For example, if
+$\mathbb I=[0,2]$ and $\operatorname{Sat}_\xi(p)=[0,1]$, then
 
 $$
-\varphi\mathbin{\mathsf W_{0]}}\psi
-\equiv\varphi\lor\psi,
+\llbracket\lozenge_{0]}p\rrbracket_{\xi,0}=[0,2],
 \qquad
-\varphi\mathbin{\mathsf W_{0)}}\psi
-\equiv\top.
+\llbracket p\rrbracket_{\xi,0}=[0,1].
 $$
 
-For selection at its own anchor,
+The following selection laws likewise concern local satisfaction at the
+selection's own anchor:
 
 $$
 \begin{aligned}

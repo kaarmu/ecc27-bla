@@ -1,70 +1,84 @@
-"""Temporal parameters and their represented trajectory windows."""
+"""Exact temporal parameters and represented, future-directed windows."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite, isnan
+from fractions import Fraction
 from numbers import Real
 import re
 from typing import TypeAlias
 
 import portion as P
 
-
 TimeValue: TypeAlias = Real
 TimeSet: TypeAlias = P.Interval
+
+# Fractions extend numeric spelling only in temporal positions.
+NUMBER_PATTERN = r"(?:\d+/\d+|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
+_DURATION = re.compile(rf"^({NUMBER_PATTERN})([\]\)])?$")
+
+
+def validate_time(value: object, *, name: str = "time") -> Fraction:
+    """Canonicalize real scalars by decimal spelling, preserving fractions."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a real number")
+    try:
+        result = value if isinstance(value, Fraction) else Fraction(str(value))
+    except (ValueError, ZeroDivisionError, OverflowError) as error:
+        raise ValueError(f"{name} must be finite") from error
+    if result < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return result
+
+
+def validate_nonnegative_interval(
+    interval: TimeSet, *, name: str = "interval", connected: bool = False
+) -> TimeSet:
+    """Validate and canonicalize finite endpoints without binary rounding."""
+    if not isinstance(interval, P.Interval):
+        raise TypeError(f"{name} must be a portion.Interval")
+    if connected and not interval.empty and not interval.atomic:
+        raise ValueError(f"{name} must be connected")
+    result = P.empty()
+    for atom in interval:
+        lower = validate_time(atom.lower, name=f"{name} lower bound")
+        if atom.upper == P.inf:
+            if atom.right != P.OPEN:
+                raise ValueError(f"{name} cannot contain infinity")
+            upper = P.inf
+        else:
+            upper = validate_time(atom.upper, name=f"{name} upper bound")
+        result |= P.Interval.from_atomic(atom.left, lower, upper, atom.right)
+    return result
 
 
 @dataclass(frozen=True, slots=True)
 class RelativeParameter:
-    """A non-negative duration with an open or closed right endpoint."""
-
-    duration: float
+    duration: TimeValue
     include_endpoint: bool = False
 
     def __post_init__(self) -> None:
-        if isinstance(self.duration, bool) or not isinstance(self.duration, Real):
-            raise TypeError("duration must be a real number")
-        duration = float(self.duration)
-        if not isfinite(duration) or duration < 0:
-            raise ValueError("duration must be finite and non-negative")
+        object.__setattr__(self, "duration", validate_time(self.duration, name="duration"))
         if type(self.include_endpoint) is not bool:
             raise TypeError("include_endpoint must be a bool")
-        object.__setattr__(self, "duration", duration)
 
 
 @dataclass(frozen=True, slots=True)
 class AbsoluteParameter:
-    """A connected interval on the absolute physical-time axis."""
-
     interval: TimeSet
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "interval",
-            validate_nonnegative_interval(
-                self.interval, name="absolute temporal parameter", connected=True
-            ),
-        )
+        object.__setattr__(self, "interval", validate_nonnegative_interval(
+            self.interval, name="absolute temporal parameter", connected=True
+        ))
 
 
 TemporalParameter: TypeAlias = RelativeParameter | AbsoluteParameter | None
 TemporalParameterInput: TypeAlias = TemporalParameter | Real | TimeSet | str
 
-_NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-_DURATION_WITH_END = re.compile(rf"^({_NUMBER})([\]\)])$")
-_BARE_DURATION = re.compile(rf"^({_NUMBER})$")
 
-
-def coerce_temporal_parameter(
-    value: TemporalParameterInput | None,
-) -> TemporalParameter:
-    """Return the canonical runtime representation of ``value``."""
-
-    if value is None:
-        return None
-    if isinstance(value, (RelativeParameter, AbsoluteParameter)):
+def coerce_temporal_parameter(value: TemporalParameterInput) -> TemporalParameter:
+    if value is None or isinstance(value, (RelativeParameter, AbsoluteParameter)):
         return value
     if isinstance(value, bool):
         raise TypeError("a temporal parameter cannot be a bool")
@@ -73,119 +87,75 @@ def coerce_temporal_parameter(
     if isinstance(value, P.Interval):
         return AbsoluteParameter(value)
     if not isinstance(value, str):
-        raise TypeError(
-            "a temporal parameter must be a duration, interval, string, or None"
-        )
-
+        raise TypeError("expected a duration, interval, temporal parameter, string, or None")
     source = value.strip()
-    if not source:
-        raise ValueError("a temporal parameter string cannot be empty")
-    if source.endswith("+"):
-        raise ValueError("trailing '+' temporal parameters are not supported")
-    if re.search(r"(?i)(?:^|[^a-z])nan(?:$|[^a-z])", source):
-        raise ValueError("absolute temporal parameter endpoints cannot be NaN")
-
-    match = _DURATION_WITH_END.fullmatch(source)
-    if match:
-        return RelativeParameter(
-            float(match.group(1)), include_endpoint=match.group(2) == "]"
-        )
-    match = _BARE_DURATION.fullmatch(source)
-    if match:
-        return RelativeParameter(float(match.group(1)))
-
+    match = _DURATION.fullmatch(source)
     try:
-        interval = P.from_string(source, conv=float)
-    except (TypeError, ValueError) as error:
+        if match:
+            return RelativeParameter(Fraction(match[1]), match[2] == "]")
+        # portion's parser handles empty, singleton, and unbounded intervals.
+        return AbsoluteParameter(P.from_string(source, conv=Fraction))
+    except (TypeError, ValueError, ZeroDivisionError, OverflowError) as error:
         raise ValueError(f"invalid temporal parameter: {value!r}") from error
-    return AbsoluteParameter(interval)
+
+
+def _format_time(value: Fraction) -> str:
+    denominator = value.denominator
+    twos = fives = 0
+    while denominator % 2 == 0:
+        denominator //= 2
+        twos += 1
+    while denominator % 5 == 0:
+        denominator //= 5
+        fives += 1
+    if denominator != 1:
+        return f"{value.numerator}/{value.denominator}"
+    places = max(twos, fives)
+    if not places:
+        return str(value.numerator)
+    digits = str(value.numerator * 2 ** (places - twos) * 5 ** (places - fives))
+    digits = digits.zfill(places + 1)
+    return (digits[:-places] + "." + digits[-places:]).rstrip("0").rstrip(".")
 
 
 def format_temporal_parameter(parameter: TemporalParameter) -> str:
-    """Format a canonical temporal parameter without its leading underscore."""
-
     canonical = coerce_temporal_parameter(parameter)
     if canonical is None:
         return ""
     if isinstance(canonical, RelativeParameter):
-        suffix = "]" if canonical.include_endpoint else ""
-        return f"{canonical.duration:g}{suffix}"
-    return str(canonical.interval)
+        return _format_time(canonical.duration) + ("]" if canonical.include_endpoint else "")
+    if canonical.interval.empty:
+        return "()"
+    atom = canonical.interval
+    left = "[" if atom.left == P.CLOSED else "("
+    right = "]" if atom.right == P.CLOSED else ")"
+    upper = "+inf" if atom.upper == P.inf else _format_time(atom.upper)
+    # Always spell both bounds, including singletons, for unambiguous parsing.
+    return f"{left}{_format_time(atom.lower)},{upper}{right}"
 
 
 def temporal_window(
-    parameter: TemporalParameter,
-    anchor: TimeValue,
-    universe: TimeSet,
+    parameter: TemporalParameter, anchor: TimeValue, universe: TimeSet
 ) -> TimeSet:
-    """Resolve the represented future window ``W_rho(anchor)``."""
-
-    anchor_number = validate_time(anchor, name="anchor")
-    validate_nonnegative_interval(universe, name="universe")
+    anchor = validate_time(anchor, name="anchor")
+    universe = validate_nonnegative_interval(universe, name="universe")
+    if anchor not in universe:
+        raise ValueError("anchor must belong to the represented universe")
     canonical = coerce_temporal_parameter(parameter)
     if canonical is None:
-        window = P.closed(anchor_number, P.inf)
+        window = P.closedopen(anchor, P.inf)
     elif isinstance(canonical, RelativeParameter):
-        upper = anchor_number + canonical.duration
-        window = (
-            P.closed(anchor_number, upper)
-            if canonical.include_endpoint
-            else P.closedopen(anchor_number, upper)
-        )
+        constructor = P.closed if canonical.include_endpoint else P.closedopen
+        window = constructor(anchor, anchor + canonical.duration)
     else:
-        window = canonical.interval & P.closed(anchor_number, P.inf)
+        window = canonical.interval & P.closedopen(anchor, P.inf)
     return window & universe
 
 
 def temporal_parameter_key(parameter: TemporalParameter) -> tuple[object, ...]:
-    """Return a deterministic ordering key for a parameter."""
-
     canonical = coerce_temporal_parameter(parameter)
     if canonical is None:
         return (0,)
     if isinstance(canonical, RelativeParameter):
         return (1, canonical.duration, canonical.include_endpoint)
-    return (2, str(canonical.interval))
-
-
-def validate_time(value: object, *, name: str = "time") -> float:
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise TypeError(f"{name} must be a real number")
-    numeric = float(value)
-    if not isfinite(numeric) or numeric < 0:
-        raise ValueError(f"{name} must be finite and non-negative")
-    return numeric
-
-
-def validate_nonnegative_interval(
-    interval: TimeSet, *, name: str = "interval", connected: bool = False
-) -> TimeSet:
-    """Validate an interval contained in non-negative real time."""
-
-    if not isinstance(interval, P.Interval):
-        raise TypeError(f"{name} must be a portion.Interval")
-    if connected and not interval.atomic:
-        raise ValueError(f"{name} must be connected")
-    for atom in interval:
-        _validate_endpoint(atom.lower, name, lower=True)
-        _validate_endpoint(atom.upper, name, lower=False)
-    return interval
-
-
-def _validate_endpoint(value: object, name: str, *, lower: bool) -> None:
-    if value == P.inf:
-        if lower:
-            raise ValueError(f"{name} must be contained in non-negative real time")
-        return
-    if value == -P.inf:
-        raise ValueError(f"{name} must be contained in non-negative real time")
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError, OverflowError) as error:
-        raise TypeError(f"{name} endpoints must be real numbers") from error
-    if isnan(numeric):
-        raise ValueError(f"{name} endpoints cannot be NaN")
-    if lower and (numeric < 0 or numeric == float("inf")):
-        raise ValueError(f"{name} must be contained in non-negative real time")
-    if not lower and numeric == float("-inf"):
-        raise ValueError(f"{name} must be contained in non-negative real time")
+    return (2, format_temporal_parameter(canonical))

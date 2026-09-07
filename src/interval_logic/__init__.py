@@ -1,4 +1,4 @@
-"""Canonical trajectory semantics with trace and reachability queries."""
+"""Canonical interval formulas and complete-trace semantics."""
 
 from .ast import (
     Always,
@@ -21,7 +21,6 @@ from .ast import (
     Signal,
     Until,
     VacuousSelection,
-    WeakUntil,
     as_formula,
     as_term,
 )
@@ -29,18 +28,13 @@ from .errors import (
     FormulaSyntaxError,
     IntervalLogicError,
     TraceValidationError,
+    UnsupportedTraceError,
+    ReachabilityValidationError,
     UnsupportedReachabilityError,
     UnsupportedTemporalParameterError,
 )
 from .parser import parse_formula
 from .pretty import format_formula, format_term
-from .reachability import (
-    EventReachabilityBackend,
-    ReachabilityBackend,
-    ReachResult,
-    StateSet,
-    reach,
-)
 from .semantics import NaturalSignal, Trace, denote, satisfies, satisfying_times
 from .simplify import expand_derived, simplify, to_nnf
 from .temporal import (
@@ -55,18 +49,28 @@ from .temporal import (
     temporal_window,
 )
 from .transform import replace
+from .reachability import ReachabilityBackend, StateSet, existential_satisfying_states
+from .backends import PyspectBackend, PyspectStateSet
 
 
 __version__ = "0.3.0"
 
 __all__ = [
+    "UnsupportedTraceError",
+    "ReachabilityValidationError",
+    "UnsupportedReachabilityError",
+    "UnsupportedTemporalParameterError",
+    "ReachabilityBackend",
+    "StateSet",
+    "existential_satisfying_states",
+    "PyspectBackend",
+    "PyspectStateSet",
     "AbsoluteParameter",
     "Always",
     "And",
     "Boolean",
     "Equal",
     "Equivalent",
-    "EventReachabilityBackend",
     "Eventually",
     "Formula",
     "FormulaSyntaxError",
@@ -79,25 +83,19 @@ __all__ = [
     "NumericTerm",
     "Or",
     "Proposition",
-    "ReachResult",
-    "ReachabilityBackend",
     "RelativeParameter",
     "Release",
     "RestrictiveSelection",
     "Selection",
     "Signal",
-    "StateSet",
     "TemporalParameter",
     "TemporalParameterInput",
     "TimeSet",
     "TimeValue",
     "Trace",
     "TraceValidationError",
-    "UnsupportedReachabilityError",
-    "UnsupportedTemporalParameterError",
     "Until",
     "VacuousSelection",
-    "WeakUntil",
     "as_formula",
     "as_term",
     "coerce_temporal_parameter",
@@ -107,7 +105,6 @@ __all__ = [
     "format_temporal_parameter",
     "format_term",
     "parse_formula",
-    "reach",
     "replace",
     "satisfies",
     "satisfying_times",

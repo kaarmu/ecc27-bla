@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, TypeAlias
@@ -17,16 +18,17 @@ from .temporal import (
 NaturalValue: TypeAlias = int
 
 
-class Formula:
+class Formula(ABC):
     """Abstract base for immutable formula nodes."""
 
     @property
+    @abstractmethod
     def children(self) -> tuple[Formula, ...]:
         raise NotImplementedError
 
     @property
     def depth(self) -> int:
-        return 1 + max((child.depth for child in self.children), default=0)
+        return 1 + max((child.depth for child in self.children), default=-1)
 
     @property
     def node_count(self) -> int:
@@ -78,14 +80,10 @@ class Formula:
     ) -> Formula:
         return Selection(self, outside, parameter)
 
-    def select_vacuously(
-        self, parameter: TemporalParameterInput = None
-    ) -> Formula:
+    def select_vac(self, parameter: TemporalParameterInput = None) -> Formula:
         return VacuousSelection(self, parameter)
 
-    def select_restrictively(
-        self, parameter: TemporalParameterInput = None
-    ) -> Formula:
+    def select_res(self, parameter: TemporalParameterInput = None) -> Formula:
         return RestrictiveSelection(self, parameter)
 
     def until(
@@ -108,13 +106,6 @@ class Formula:
     ) -> Formula:
         return Release(self, other, parameter)
 
-    def weak_until(
-        self,
-        other: Formula | bool | str,
-        parameter: TemporalParameterInput = None,
-    ) -> Formula:
-        return WeakUntil(self, other, parameter)
-
     def replace(
         self, *functions: Callable[[Formula], Formula | str]
     ) -> Formula:
@@ -136,8 +127,12 @@ class Formula:
         return type(self)(*children)
 
 
-class NumericTerm:
+class NumericTerm(ABC):
     """Abstract base for natural-valued terms."""
+
+    @abstractmethod
+    def __init__(self) -> None:
+        """Concrete immutable terms supply their own value constructor."""
 
     def __bool__(self) -> bool:
         raise TypeError("numeric terms have no Python truth value")
@@ -473,32 +468,6 @@ class Release(Formula):
         return Release(*children, self.parameter)
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class WeakUntil(Formula):
-    left: Formula
-    right: Formula
-    parameter: TemporalParameter
-
-    def __init__(
-        self,
-        left: Formula | str | bool,
-        right: Formula | str | bool,
-        parameter: TemporalParameterInput = None,
-    ) -> None:
-        object.__setattr__(self, "left", as_formula(left))
-        object.__setattr__(self, "right", as_formula(right))
-        object.__setattr__(
-            self, "parameter", coerce_temporal_parameter(parameter)
-        )
-
-    @property
-    def children(self) -> tuple[Formula, ...]:
-        return (self.left, self.right)
-
-    def _with_children(self, children: tuple[Formula, ...]) -> Formula:
-        return WeakUntil(*children, self.parameter)
-
-
 TEMPORAL_NODE_TYPES = (
     Selection,
     VacuousSelection,
@@ -507,7 +476,6 @@ TEMPORAL_NODE_TYPES = (
     Eventually,
     Always,
     Release,
-    WeakUntil,
 )
 
 
@@ -577,8 +545,6 @@ def formula_key(formula: Formula | str) -> tuple[Any, ...]:
             return (13, temporal_parameter_key(parameter), formula_key(body))
         case Release(left=left, right=right, parameter=parameter):
             return (14, temporal_parameter_key(parameter), formula_key(left), formula_key(right))
-        case WeakUntil(left=left, right=right, parameter=parameter):
-            return (15, temporal_parameter_key(parameter), formula_key(left), formula_key(right))
         case _:
             raise TypeError(f"unsupported formula type: {type(formula).__name__}")
 

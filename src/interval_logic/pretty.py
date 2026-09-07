@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 
 from .ast import (
     Always,
@@ -24,7 +25,6 @@ from .ast import (
     Signal,
     Until,
     VacuousSelection,
-    WeakUntil,
     as_formula,
     as_term,
 )
@@ -140,9 +140,9 @@ def _format(formula: Formula, symbols: _Symbols, parent: int) -> str:
                 text = f"select({_format(body, symbols, 0)}){_suffix(parameter)}"
         case RestrictiveSelection(body=body, parameter=parameter):
             if symbols is _UNICODE:
-                text = f"⟨{_format(body, symbols, 0)}⟩*{_suffix(parameter)}"
+                text = f"⟨{_format(body, symbols, 0)}⟩{_suffix(parameter)}*"
             else:
-                text = f"select({_format(body, symbols, 0)})*{_suffix(parameter)}"
+                text = f"select({_format(body, symbols, 0)}){_suffix(parameter)}*"
         case Eventually(body=body, parameter=parameter):
             operator = "◇" if symbols is _UNICODE else "eventually"
             text = f"{operator}{_suffix(parameter)} {_format(body, symbols, _NOT)}"
@@ -151,10 +151,6 @@ def _format(formula: Formula, symbols: _Symbols, parent: int) -> str:
             text = f"{operator}{_suffix(parameter)} {_format(body, symbols, _NOT)}"
         case Until(left=left, right=right, parameter=parameter):
             text = _temporal_infix("U", "until", parameter, left, right, symbols)
-        case WeakUntil(left=left, right=right, parameter=parameter):
-            text = _temporal_infix(
-                "W", "weak_until", parameter, left, right, symbols
-            )
         case Release(left=left, right=right, parameter=parameter):
             text = _temporal_infix("R", "release", parameter, left, right, symbols)
         case _:
@@ -187,7 +183,7 @@ def _precedence(formula: Formula) -> int:
         return _OR
     if isinstance(formula, And):
         return _AND
-    if isinstance(formula, (Until, WeakUntil, Release)):
+    if isinstance(formula, (Until, Release)):
         return _TEMPORAL
     if isinstance(formula, (Not, Always, Eventually)):
         return _NOT
@@ -202,10 +198,9 @@ def _suffix(parameter: TemporalParameter) -> str:
 def _format_name(name: str) -> str:
     reserved = {
         "true", "false", "not", "and", "or", "implies", "equivalent",
-        "select", "always", "eventually", "until", "weak_until", "release",
-        "U", "W", "R",
+        "select", "always", "eventually", "until", "release",
+        "U", "R",
     }
     if name.isidentifier() and name not in reserved:
         return name
-    escaped = name.replace("\\", "\\\\").replace("`", "\\`")
-    return f"`{escaped}`"
+    return json.dumps(name, ensure_ascii=False)

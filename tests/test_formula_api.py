@@ -43,6 +43,12 @@ class FormulaApiTests(unittest.TestCase):
         self.assertEqual(
             self.p.equivalent(self.q), il.Equivalent(self.p, self.q)
         )
+        self.assertEqual(self.p.select_vac(2), il.VacuousSelection(self.p, 2))
+        self.assertEqual(
+            self.p.select_res(2), il.RestrictiveSelection(self.p, 2)
+        )
+        self.assertFalse(hasattr(self.p, "select_vacuously"))
+        self.assertFalse(hasattr(self.p, "select_restrictively"))
 
     def test_round_trip_unicode_and_ascii(self):
         formulas = (
@@ -57,7 +63,6 @@ class FormulaApiTests(unittest.TestCase):
             il.Eventually(self.p, "2]"),
             il.Always(self.p),
             il.Until(self.p, self.q, 4),
-            il.WeakUntil(self.p, self.q, 4),
             il.Release(self.p, self.q, 4),
         )
         for formula in formulas:
@@ -69,7 +74,7 @@ class FormulaApiTests(unittest.TestCase):
 
     def test_traversal_validation_and_no_python_truth(self):
         formula = il.Eventually(self.p & self.q, 2)
-        self.assertEqual(formula.depth, 3)
+        self.assertEqual(formula.depth, 2)
         self.assertEqual(formula.node_count, 4)
         with self.assertRaises(TypeError):
             bool(formula)
@@ -99,8 +104,14 @@ class FormulaApiTests(unittest.TestCase):
             "parameter_window",
             "ReachabilitySystem",
             "EventReachabilitySystem",
+            "EventReachabilityBackend",
+            "ReachResult",
+            "reach",
         ):
             self.assertFalse(hasattr(il, legacy), legacy)
+
+        for removed in ("WeakUntil", "temporal_horizon"):
+            self.assertFalse(hasattr(il, removed), removed)
 
 
 if __name__ == "__main__":

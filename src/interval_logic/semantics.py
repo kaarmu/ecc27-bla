@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from fractions import Fraction
 from types import MappingProxyType
 from typing import TypeAlias
 
@@ -30,10 +31,9 @@ from .ast import (
     Signal,
     Until,
     VacuousSelection,
-    WeakUntil,
     as_formula,
 )
-from .errors import TraceValidationError
+from .errors import TraceValidationError, UnsupportedTraceError
 from .temporal import (
     AbsoluteParameter,
     RelativeParameter,
@@ -70,7 +70,7 @@ class NaturalSignal:
         covered = P.empty()
         for value, interval in regions.items():
             _require_natural(value, "NaturalSignal region value")
-            validate_nonnegative_interval(interval, name="NaturalSignal region")
+            interval = _trace_interval(interval, name="NaturalSignal region")
             if not (covered & interval).empty:
                 raise TraceValidationError(
                     "NaturalSignal regions must be pairwise disjoint"
@@ -84,11 +84,13 @@ class NaturalSignal:
     def parts(self, universe: TimeSet) -> Mapping[NaturalValue, TimeSet]:
         """Return value regions clipped to ``universe`` and completed by default."""
 
-        validate_nonnegative_interval(universe, name="universe")
+        universe = _trace_interval(universe, name="universe")
         result: dict[int, TimeSet] = {}
         covered = P.empty()
         for value, interval in self.regions.items():
-            effective = interval & universe
+            if not (interval - universe).empty:
+                raise TraceValidationError("signal regions must be subsets of the trace universe")
+            effective = interval
             if not effective.empty:
                 result[value] = result.get(value, P.empty()) | effective
                 covered |= effective
@@ -117,7 +119,7 @@ class Trace:
         propositions: PropositionValuation | None = None,
         signals: SignalValuation | None = None,
     ) -> None:
-        validate_nonnegative_interval(universe, name="Trace universe")
+        universe = _trace_interval(universe, name="Trace universe")
         propositions = {} if propositions is None else propositions
         signals = {} if signals is None else signals
         if not isinstance(propositions, Mapping):
@@ -128,9 +130,9 @@ class Trace:
         proposition_copy: dict[str, TimeSet] = {}
         for name, interval in propositions.items():
             _require_mapping_name(name, "proposition")
-            validate_nonnegative_interval(
-                interval, name=f"valuation for proposition {name!r}"
-            )
+            interval = _trace_interval(interval, name=f"valuation for proposition {name!r}")
+            if not (interval - universe).empty:
+                raise TraceValidationError("proposition regions must be subsets of the trace universe")
             proposition_copy[name] = interval
 
         signal_copy: dict[str, NaturalSignal] = {}
@@ -171,18 +173,20 @@ def satisfying_times(formula: Formula | str, trace: Trace) -> TimeSet:
 
     if not isinstance(trace, Trace):
         raise TypeError("trace must be a Trace")
-    return _EvaluationContext(trace).satisfying(as_formula(formula))
+    formula = as_formula(formula)
+    _validate_signals(formula, trace)
+    return _EvaluationContext(trace).satisfying(formula)
 
 
 class _EvaluationContext:
     def __init__(self, trace: Trace) -> None:
         self.trace = trace
         self.universe = trace.universe
-        self._truth_cache: dict[tuple[Formula, float], bool] = {}
+        self._truth_cache: dict[tuple[Formula, Fraction], bool] = {}
         self._satisfying_cache: dict[Formula, TimeSet] = {}
-        self._denotation_cache: dict[tuple[Formula, float], TimeSet] = {}
+        self._denotation_cache: dict[tuple[Formula, Fraction], TimeSet] = {}
 
-    def local_truth(self, formula: Formula, at: float) -> bool:
+    def local_truth(self, formula: Formula, at: Fraction) -> bool:
         """Evaluate ``(w, at) satisfies formula`` directly."""
 
         key = (formula, at)
@@ -238,15 +242,13 @@ class _EvaluationContext:
                 result = not self._until_truth(
                     Not(left), Not(right), parameter, at
                 )
-            case WeakUntil(left=left, right=right, parameter=parameter):
-                result = self._weak_until_truth(left, right, parameter, at)
             case _:
-                raise TypeError(f"unsupported formula type: {type(formula).__name__}")
+                raise UnsupportedTraceError(f"unsupported formula type: {type(formula).__name__}")
 
         self._truth_cache[key] = result
         return result
 
-    def denotation(self, formula: Formula, anchor: float) -> TimeSet:
+    def denotation(self, formula: Formula, anchor: Fraction) -> TimeSet:
         key = (formula, anchor)
         cached = self._denotation_cache.get(key)
         if cached is not None:
@@ -291,10 +293,10 @@ class _EvaluationContext:
             case RestrictiveSelection(body=body, parameter=parameter):
                 window = temporal_window(parameter, anchor, universe)
                 result = window & self.satisfying(body)
-            case Eventually() | Always() | Until() | Release() | WeakUntil():
+            case Eventually() | Always() | Until() | Release():
                 result = universe if self.local_truth(formula, anchor) else P.empty()
             case _:
-                raise TypeError(f"unsupported formula type: {type(formula).__name__}")
+                raise UnsupportedTraceError(f"unsupported formula type: {type(formula).__name__}")
 
         result &= universe
         self._denotation_cache[key] = result
@@ -350,9 +352,9 @@ class _EvaluationContext:
                 if atom.lower <= boundary <= atom.upper
             )
             if atom.lower != -P.inf:
-                atom_boundaries.append(float(atom.lower))
+                atom_boundaries.append(atom.lower)
             if atom.upper != P.inf:
-                atom_boundaries.append(float(atom.upper))
+                atom_boundaries.append(atom.upper)
             points = sorted(set(atom_boundaries))
 
             for point in points:
@@ -375,7 +377,7 @@ class _EvaluationContext:
         return result
 
     def _until_truth(
-        self, left: Formula, right: Formula, parameter, anchor: float
+        self, left: Formula, right: Formula, parameter, anchor: Fraction
     ) -> bool:
         window = temporal_window(parameter, anchor, self.universe)
         candidates = window & self.satisfying(right)
@@ -390,24 +392,6 @@ class _EvaluationContext:
         first_bad = next(iter(bad)).lower
         allowed = P.openclosed(-P.inf, first_bad)
         return not (candidates & allowed).empty
-
-    def _weak_until_truth(
-        self, left: Formula, right: Formula, parameter, anchor: float
-    ) -> bool:
-        if self._until_truth(left, right, parameter, anchor):
-            return True
-        window = temporal_window(parameter, anchor, self.universe)
-        if window.empty:
-            return True
-        last = tuple(window)[-1]
-        if last.upper == P.inf:
-            prefix = P.closed(anchor, P.inf)
-        elif last.right == P.CLOSED:
-            prefix = P.closed(anchor, last.upper)
-        else:
-            prefix = P.closedopen(anchor, last.upper)
-        horizon = prefix & self.universe
-        return (horizon - self.satisfying(left)).empty
 
     def _equal_satisfying_times(
         self, left: NumericTerm, right: NumericTerm
@@ -424,7 +408,7 @@ class _EvaluationContext:
             result |= left_parts[value] & right_parts[value]
         return result
 
-    def _term_value(self, term: NumericTerm, at: float) -> NaturalValue:
+    def _term_value(self, term: NumericTerm, at: Fraction) -> NaturalValue:
         if isinstance(term, NaturalLiteral):
             return term.value
         for value, region in self._term_parts(term).items():
@@ -448,24 +432,29 @@ class _EvaluationContext:
 
 def _validated_request(
     formula: Formula | str, trace: Trace, anchor: TimeValue
-) -> tuple[Formula, Trace, float]:
+) -> tuple[Formula, Trace, Fraction]:
     if not isinstance(trace, Trace):
         raise TypeError("trace must be a Trace")
-    anchor_number = validate_time(anchor, name="anchor")
+    try:
+        anchor_number = validate_time(anchor, name="anchor")
+    except (TypeError, ValueError) as error:
+        raise TraceValidationError(str(error)) from error
     if anchor_number not in trace.universe:
         raise TraceValidationError(
             "anchor must be represented by the trace universe"
         )
-    return as_formula(formula), trace, anchor_number
+    formula = as_formula(formula)
+    _validate_signals(formula, trace)
+    return formula, trace, anchor_number
 
 
-def _finite_endpoints(interval: TimeSet) -> set[float]:
-    result: set[float] = set()
+def _finite_endpoints(interval: TimeSet) -> set[Fraction]:
+    result: set[Fraction] = set()
     for atom in interval:
         if atom.lower not in {-P.inf, P.inf}:
-            result.add(float(atom.lower))
+            result.add(atom.lower)
         if atom.upper not in {-P.inf, P.inf}:
-            result.add(float(atom.upper))
+            result.add(atom.upper)
     return result
 
 
@@ -481,3 +470,21 @@ def _require_mapping_name(value: object, label: str) -> None:
         raise TypeError(f"{label} valuation names must be strings")
     if not value:
         raise ValueError(f"{label} valuation names must not be empty")
+
+
+def _trace_interval(interval: TimeSet, *, name: str) -> TimeSet:
+    try:
+        return validate_nonnegative_interval(interval, name=name)
+    except (TypeError, ValueError) as error:
+        raise TraceValidationError(str(error)) from error
+
+
+def _validate_signals(formula: Formula, trace: Trace) -> None:
+    pending = [formula]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, Equal):
+            for term in (node.left, node.right):
+                if isinstance(term, Signal) and term.name not in trace.signals:
+                    raise TraceValidationError(f"missing valuation for signal {term.name!r}")
+        pending.extend(node.children)

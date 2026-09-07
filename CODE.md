@@ -17,6 +17,8 @@ The implementation uses `portion.Interval` for represented subsets of time.
 The public aliases are:
 
 ```python
+from numbers import Real
+
 NaturalValue = int
 TimeValue = Real
 TimeSet = portion.Interval
@@ -27,14 +29,23 @@ durations reject booleans, non-real values, infinities, NaN, and negative
 values. Evaluation universes may be disconnected but must be contained in
 $\mathbb R_{\geq0}$. `TimeSet` values may use an infinite endpoint to
 represent an unbounded subset. Absolute temporal intervals must additionally
-be connected.
+be connected; empty intervals are allowed. Infinity is only a boundary, never
+a represented time, so infinite endpoints must be open.
+
+The finite interval-union representation and region-based signals below are
+interface design choices; `LOGIC.md` does not restrict mathematical trajectories
+or universes to those representable by `portion.Interval`. Inputs and outputs
+must be exact, without silent sampling or rounding. Unsupported exact trace
+computations raise `UnsupportedTraceError`. Empty universes are allowed:
+`satisfying_times()` returns empty, while no local/anchored query has a valid
+anchor.
 
 Temporal parameters have explicit runtime types:
 
 ```python
 @dataclass(frozen=True, slots=True)
 class RelativeParameter:
-    duration: float
+    duration: TimeValue
     include_endpoint: bool = False
 
 @dataclass(frozen=True, slots=True)
@@ -45,10 +56,11 @@ TemporalParameter = RelativeParameter | AbsoluteParameter | None
 TemporalParameterInput = TemporalParameter | Real | TimeSet | str
 ```
 
-`None` means genuine omission. Numeric inputs and bare numeric strings become
-half-open `RelativeParameter` values. A string ending in `]` is closed and one
-ending in `)` is half-open. Interval objects and interval strings become
-`AbsoluteParameter` values. Formatting emits bare numbers for half-open
+`None` represents omitted syntax, not an additional logical parameter. Numeric
+inputs and bare numeric strings become half-open `RelativeParameter` values.
+A duration string ending in `]` is closed and one ending in `)` is half-open.
+Interval objects and interval strings become `AbsoluteParameter` values;
+two-bound interval syntax takes precedence over duration-suffix parsing. Formatting emits bare numbers for half-open
 relative parameters, a trailing `]` for closed relative parameters, and no
 suffix for omission.
 
@@ -64,7 +76,16 @@ temporal_window(parameter: TemporalParameter, anchor: TimeValue, universe: TimeS
 `W_rho(a)`. Relative, absolute, and omitted windows are future-directed and
 clipped to the evaluation universe. In particular, an absolute parameter
 resolves to `interval & [anchor, +inf) & universe`. Selection, until,
-eventually, always, release, and weak until all use this helper.
+eventually, always, and release all use this helper. The helper requires an
+anchor in the universe. Constructors validate natural values, Boolean fields,
+and temporal bounds. As error-design choices, invalid standalone values raise
+`ValueError`, inappropriate Python types raise `TypeError`, and trace and
+reachability entry points use their domain-specific validation errors.
+`format_temporal_parameter(None)` returns an empty string.
+
+There is no weak-until node or prefix-horizon helper in this contract:
+`LOGIC.md` §“Formulas and temporal basis” defines neither weak until nor
+`H_rho(a)`. An extension requires an upstream definition.
 
 ## Formula and term model
 
@@ -127,8 +148,9 @@ class Equivalent(Formula):
     right: Formula
 ```
 
-Temporal nodes retain the user-facing derived forms so parsing and formatting
-are lossless:
+Temporal nodes retain user-facing derived forms. Parsing and formatting preserve
+canonical nodes and parameters, not original whitespace, aliases, or the
+spelling distinction between bare durations and explicit `d)`:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -168,12 +190,6 @@ class Release(Formula):
     left: Formula
     right: Formula
     parameter: TemporalParameter = None
-
-@dataclass(frozen=True, slots=True)
-class WeakUntil(Formula):
-    left: Formula
-    right: Formula
-    parameter: TemporalParameter = None
 ```
 
 Operand arguments precede the optional temporal parameter in every
@@ -195,13 +211,12 @@ formula | other
 formula.implies(other)
 formula.equivalent(other)
 formula.select(outside=True, parameter=None)
-formula.select_vacuously(parameter=None)
-formula.select_restrictively(parameter=None)
+formula.select_vac(parameter=None)
+formula.select_res(parameter=None)
 formula.until(other, parameter=None)
 formula.eventually(parameter=None)
 formula.always(parameter=None)
 formula.release(other, parameter=None)
-formula.weak_until(other, parameter=None)
 formula.replace(*functions)
 formula.simplify()
 ```
@@ -209,7 +224,13 @@ formula.simplify()
 `NumericTerm.equals()` and `NumericTerm.not_equals()` construct equality and
 inequality formulas for any pair of numeric terms.
 `as_formula()` accepts a `Formula`, bool, or formula string. `as_term()` accepts
-a `NumericTerm` or natural integer. Names must be nonempty strings.
+a `NumericTerm` or natural integer. `not_equals()` returns `Not(Equal(...))`,
+as required by §“Signals and atoms”. Python equality and hashing compare syntax
+values; `equals()` constructs logical equality. Names must be nonempty strings.
+
+As interface choices, empty `And` is true, empty `Or` is false, and singleton
+nodes have their operand's semantics. Variadic nodes represent the iterated
+Boolean operations from §“Formulas and temporal basis”.
 
 The following semantic identities are mandatory regardless of retained node
 types:
@@ -227,9 +248,6 @@ equality. Retained derived nodes remain distinct immutable values;
 `expand_derived()` is the operation that lowers them to the corresponding
 basis formulas.
 
-`WeakUntil` remains an optional primitive with the direct horizon semantics in
-`LOGIC.md`; it is not rewritten as `Until | Always` for absolute intervals.
-
 ## Parsing, formatting, rewriting, and traversal
 
 The canonical public functions are:
@@ -246,26 +264,49 @@ to_nnf(formula: Formula | str) -> Formula
 
 The parser accepts the Unicode notation in `LOGIC.md` and these ASCII words:
 `true`, `false`, `not`, `and`, `or`, `implies`, `equivalent`, `select`,
-`eventually`, `always`, `until`, `weak_until`, and `release`. It accepts `!`,
+`eventually`, `always`, `until`, and `release`. It accepts `!`,
 `&`, `|`, `->`, and `<->` as Boolean aliases. Temporal suffixes follow an
 underscore, for example `always_5] p`, `eventually_[3,8) p`, or `p until q`
 when the parameter is omitted. Canonical Unicode formatting uses `⊤`, `⊥`,
-`¬`, `∧`, `∨`, angle selections, `◇`, `□`, `U`, `W`, and `R` as in
-`LOGIC.md`; ASCII formatting uses the words above.
+`¬`, `∧`, `∨`, angle selections, `◇`, `□`, `U`, and `R` as in
+`LOGIC.md`; ASCII formatting uses the words above. Both modes support `=` and
+inequality (`!=` or `≠`), binary selection, both unary selections including `*`,
+and all parameters on all temporal constructs. As an ASCII interface choice,
+selection is `select(p, q)_rho`, `select(p)_rho`, or `select(p)_rho*`, with
+suffix omitted for omission. Formatting parenthesizes compound operands to
+preserve scope. Names outside the unquoted identifier grammar, including
+reserved words, use JSON-style double-quoted names; context distinguishes
+propositions from signal terms. These quoting conventions are design choices.
+Canonical formatting round-trips syntax up to normalization of empty,
+singleton, and grouped variadic Boolean nodes, while retaining derived temporal
+forms. Inequality is represented by `Not(Equal(...))`; these normalizations
+preserve both local truth and anchored masks.
 
-`simplify()` is semantics-preserving. It may normalize commutative Boolean
+`simplify()` preserves both local satisfaction and anchored mask denotation
+at every represented anchor. It may normalize commutative Boolean
 operands, apply constants, complements, idempotence, absorption, double
 negation, reflexive equality, and componentwise selection negation. It must
-not treat a selection as a condition or replace weak until by an invalid
-absolute-window identity.
+not treat a selection as a condition. The local laws in §“Selection and
+re-anchoring” and §“Zero-duration laws” are not unrestricted mask rewrites:
+`Eventually(p, RelativeParameter(0, True))` has a globally valued mask and
+cannot generally simplify to `p`; positive relative selection cannot generally
+simplify to its inside operand. Local-only reductions belong to satisfaction
+and reachability evaluation with anchor scope respected. They must not mutate
+the syntax used by `denote()`.
+
+`expand_derived()` and `to_nnf()` also preserve both observations. User-directed
+`replace()` has no semantic-preservation guarantee.
 
 `expand_derived()` recursively lowers every form that `LOGIC.md` defines as an
 abbreviation: `false`, disjunction, implication, equivalence, unary
 selections, eventually, always, and release. Its output contains only
-`Boolean(True)`, atoms, `Not`, `And`, `Selection`, `Until`, and the optional
-direct `WeakUntil` extension. `to_nnf()` uses Boolean and temporal dualities
-to place negation at atoms where the available dual is defined; a negated
-`WeakUntil` may remain opaque.
+`Boolean(True)`, atoms, `Not`, `And`, `Selection`, and `Until`. Variadic `And`
+may represent iterated binary conjunction; empty conjunction lowers to true.
+`to_nnf()` uses §“Negation dualities” and Boolean dualities to leave negation
+only at atoms, with constants unnegated. It may retain `Or`, unary selections,
+`Eventually`, `Always`, and `Release`; NNF is not minimal-basis expansion.
+In particular, reachability preprocessing retains supported `Always` nodes
+rather than forcing them into negated until.
 
 Every formula exposes:
 
@@ -276,11 +317,19 @@ node_count: int
 ```
 
 `replace()` is deterministic, immutable, bottom-up, and applies its functions
-in argument order.
+in argument order. As traversal design choices, `children` lists immediate
+formula operands in stored order, excluding numeric terms. Leaves (including
+empty variadic nodes) have depth zero and count one; otherwise depth is one
+plus maximum child depth and count is one plus the sum of child counts.
+Replacements run once per visited node on rebuilt children; returned subtrees
+are not revisited in the same pass.
 
 ## Complete-trajectory trace model and denotation
 
-A complete known trajectory `w` is represented by `Trace`:
+`Trace` represents the restriction of one complete known trajectory $\xi$ to
+its evaluation universe. The physical trajectory remains defined on
+$\mathbb R_{\geq0}$, as required by `LOGIC.md`; only its represented
+restriction is needed for trace checking:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -296,8 +345,15 @@ class Trace:
 ```
 
 Signal regions must be pairwise disjoint. A default value is required if the
-explicit regions do not cover the trace universe. Missing propositions are
-false. A referenced but missing signal is an error.
+explicit regions do not cover the trace universe. Keys and defaults must be
+natural values. As representation choices, all regions must be subsets of the
+universe, and constructors copy mappings to prevent later caller mutation from
+changing the trace. Invalid regions, overlap, incomplete coverage without a
+default, or referenced missing signals raise `TraceValidationError`. Missing
+propositions are false: this is a closed-world valuation convention, not a
+logical law. Values outside represented time need not be materialized. These
+requirements implement §“Signals and atoms” and §“Trajectories, states, and
+represented time”.
 
 The canonical trace APIs are:
 
@@ -307,13 +363,29 @@ satisfies(formula: Formula | str, trace: Trace, at: TimeValue) -> bool
 satisfying_times(formula: Formula | str, trace: Trace) -> TimeSet
 ```
 
-`satisfies()` implements the fundamental relation `(w, at) satisfies formula`.
-`satisfying_times()` returns `Sat_w(formula)`, re-anchoring every temporal
-operand at each inspected time. `denote()` returns the additional anchored
-denotation `[[formula]]_(w, anchor)`, which preserves a selector's complete
-time mask. The diagonal agreement
+`satisfies()` implements the fundamental relation
+$(\xi,\texttt{at})\models\varphi$. `satisfying_times()` returns
+$\operatorname{Sat}_{\xi}(\varphi)$, re-anchoring every temporal operand at
+each inspected time. `denote()` returns the additional anchored denotation
+$\llbracket\varphi\rrbracket_{\xi,\texttt{anchor}}$, which preserves a
+selector's complete time mask. The diagonal agreement
 `satisfies(formula, trace, t) == (t in denote(formula, trace, t))` is a required
 consequence, not the definition of local satisfaction.
+
+In particular, anchored selection uses the operands' local truth-time sets:
+
+```python
+window = temporal_window(selection.parameter, anchor, trace.universe)
+inside_times = satisfying_times(selection.inside, trace)
+outside_times = satisfying_times(selection.outside, trace)
+result = ((window & inside_times)
+          | ((trace.universe - window) & outside_times))
+```
+
+It must not recursively combine `denote(selection.inside, trace, anchor)` and
+`denote(selection.outside, trace, anchor)`. Conditions nested in either branch
+are therefore re-anchored at every time whose local truth is inspected, as in
+the definition of $\operatorname{Sat}_{\xi}$.
 
 Every result is clipped to the trace universe. The `anchor` passed to
 `denote()` and the `at` time passed to `satisfies()` must belong to
@@ -321,18 +393,51 @@ Every result is clipped to the trace universe. The `anchor` passed to
 `TraceValidationError`.
 
 The trace evaluator implements every node in the formula model, including
-selection masks, strong until, derived eventually/always/release, and direct
-weak until. Conditions return either the full universe or the empty set for a
-fixed anchor. Exact zero-duration behavior must match the table in
-`LOGIC.md`.
+selection masks, strong until, and derived eventually/always/release. Conditions
+return either the full universe or the empty set at a fixed anchor. Boolean
+combinations use set operations on anchored masks; those containing selections
+need not be globally valued (§“Anchored mask denotation”).
+
+Strong until requires a right-operand witness `tau` in `temporal_window()` and
+the left operand at every represented time in `[anchor, tau)`, including any
+prefix before an absolute window starts. The witness need not satisfy the left
+operand. Gaps in the universe impose no obligations. Each inspected operand
+uses local satisfaction at that time (§“Local satisfaction”).
+
+The exact local zero-duration laws are:
+
+| Construct | `0]` | `0)` (also bare `0`) |
+| --- | --- | --- |
+| `Eventually(body)` | `body` | false |
+| `Always(body)` | `body` | true |
+| `Until(left, right)` | `right` | false |
+| `Release(left, right)` | `right` | true |
+| `Selection(inside, outside)` | `inside` | `outside` |
+
+Any empty window makes until/eventually false and always/release true.
+Omitted and positive relative selectors locally choose the inside branch;
+absolute selectors choose it exactly when the inspected time is in the
+absolute interval. These are local laws, not general mask simplifications
+(§“Zero-duration laws” and §“Selection and re-anchoring”).
+
+As concrete checks from §“Selection and re-anchoring”, the formulas
+`always_5] select(p)_3` and `always_5] p` have identical local truth: selection
+does not require three units of persistence. At an outer anchor before 3,
+`always_[3,10] select(p, q)_[5,8)` requires `q` on `[3,5)`, `p` on `[5,8)`,
+and `q` on `[8,10]`, each restricted to represented time.
+
+For the mask counterexample in §“Zero-duration laws”, if the universe is
+`[0,2]` and proposition `p` holds on `[0,1]`, then
+`denote("eventually_0] p", trace, 0)` is `[0,2]`, whereas
+`denote("p", trace, 0)` is `[0,1]`.
 
 ## Reachability interfaces
 
 The semantic system in `LOGIC.md` is
-`S = (X_adm, Xi, V)`: `Xi` is a family of physical-time trajectories and `V`
-is the atomic valuation. The Python object below is a computational backend
-bound to one such system; it is not itself the definition of trajectory
-satisfaction. This distinction is reflected in its name.
+$\Sigma=(X,\Xi,V)$: $X$ is the invariant-constrained state space, $\Xi$ is a
+family of physical-time trajectories, and $V$ is the atomic valuation. The
+Python object below is a computational backend bound to one such system; it is
+not itself the definition of trajectory satisfaction.
 
 Reachability operates on multidimensional symbolic sets. It does not use
 `TimeSet` as a substitute for `StateSet`.
@@ -346,45 +451,43 @@ class StateSet(Protocol):
     def is_empty(self) -> bool: ...
     def is_subset(self, other: StateSet) -> bool: ...
     def normalize(self) -> StateSet: ...
-
-@dataclass(frozen=True, slots=True)
-class ReachResult:
-    tlt_set: StateSet
-    certified: bool
 ```
 
-All `StateSet` complements are relative to the backend's `admissible_states`,
-which denotes $X_{\mathrm{adm}}$. Implementations may use one-dimensional
-intervals for coordinate domains, but unions must preserve correlations and
-invariants must support relations such as uniqueness of nonzero signal values.
-
-`ReachResult.tlt_set` denotes the computed set
-`widehat(Sat)_S^exists(formula, anchor)`. It must not be named or documented as
-though it were automatically the true existential satisfaction set.
-`certified` is true exactly when the computation establishes
-`tlt_set == Sat_S^exists(formula, anchor)`. A false value means that equality
-was not established; it does not assert that the two sets are unequal or
-imply an under- or over-approximation direction.
+All `StateSet` operations use the same backend's `state_space`, denoting $X$;
+complement is relative to $X$, not a coordinate bounding box. Incompatible
+state spaces raise `ReachabilityValidationError`, an interface choice.
+`normalize()` preserves the represented set. Implementations may use
+one-dimensional intervals for coordinate domains, but unions must preserve correlations and invariants must support
+relations such as uniqueness of nonzero signal values. In §“Charging-station
+example”, repeated zeros are allowed and repeated positive job IDs are
+forbidden; this invariant belongs to that system's $X$, not to every trace or
+state set. Equality between signals must preserve coordinate relations.
 
 The canonical reachability names map directly to `LOGIC.md`:
 
 | Logical object | Python interface |
 | --- | --- |
-| $X_{\mathrm{adm}}$ | `backend.admissible_states` |
-| $V(\alpha)$ | `backend.atom(alpha)` |
-| $\mathcal R_{\rho,a}(B;A)$ | `backend.constrained_reach(B, A, parameter, anchor)` |
-| $\mathcal I_{\rho,a}(A)$ | `backend.existential_invariance(A, parameter, anchor)` |
-| $\widehat{\operatorname{Sat}}_{\mathcal S}^{\exists}(\varphi,a)$ | `reach(...).tlt_set` |
-| Equality with $\operatorname{Sat}_{\mathcal S}^{\exists}(\varphi,a)$ established | `reach(...).certified` |
+| $X$ | `backend.state_space` |
+| $V(\alpha)$ | `backend.atomic_states(alpha)` |
+| $\mathcal R_{\rho,a}(B;A)$ | `backend.constrained_reach(B, A, parameter, anchor, universe)` |
+| $\mathcal I_{\rho,a}(A)$ | `backend.existential_invariance(A, parameter, anchor, universe)` |
+| $\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)$ | `existential_satisfying_states(...)` |
+
+`constrained_reach` is backward reachability: its result contains initial states
+admitting a constrained trajectory to `target`, not states reached forward from
+it (§“Reachability operators for state predicates”). The compatible existing
+name is retained; the direction is part of its contract. `atomic_states()`
+returns an atom's valuation set, evaluating both terms for equality; it does
+not itself quantify over trajectories.
 
 The backend primitives corresponding to the trajectory definitions are:
 
 ```python
 class ReachabilityBackend(Protocol):
     @property
-    def admissible_states(self) -> StateSet: ...
+    def state_space(self) -> StateSet: ...
 
-    def atom(self, atom: Proposition | Equal) -> StateSet: ...
+    def atomic_states(self, atom: Proposition | Equal) -> StateSet: ...
 
     def constrained_reach(
         self,
@@ -392,6 +495,7 @@ class ReachabilityBackend(Protocol):
         constraint: StateSet,
         parameter: TemporalParameter,
         anchor: TimeValue,
+        universe: TimeSet,
     ) -> StateSet: ...
 
     def existential_invariance(
@@ -399,80 +503,114 @@ class ReachabilityBackend(Protocol):
         safe: StateSet,
         parameter: TemporalParameter,
         anchor: TimeValue,
+        universe: TimeSet,
     ) -> StateSet: ...
-
-    def certify_conjunction(
-        self,
-        formula: And,
-        operands: tuple[ReachResult, ...],
-        anchor: TimeValue,
-    ) -> bool: ...
 ```
 
 The public computation is:
 
 ```python
-reach(
+existential_satisfying_states(
     formula: Formula | str,
     backend: ReachabilityBackend,
     anchor: TimeValue,
-) -> ReachResult
+    universe: TimeSet,
+) -> StateSet
 ```
 
-The backend is responsible for ensuring that `admissible_states`, `atom()`,
+The returned set is exactly
+$\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)$. There is no separate
+approximate result or alternative reachability denotation. If the generic
+propagation and backend primitives cannot establish that exact set, the call
+raises `UnsupportedReachabilityError`.
+
+The evaluation universe must be a represented subset of
+$\mathbb R_{\geq0}$, and the anchor must belong to it. An anchor outside the
+universe raises `ReachabilityValidationError`. The same universe is passed to
+every primitive involved in the query, so all trajectories use the common
+$\mathbb I$ required by `LOGIC.md`.
+
+The backend is responsible for ensuring that `state_space`, `atomic_states()`,
 `constrained_reach()`, and `existential_invariance()` use one consistent
-`(X_adm, Xi, V)`. Primitive calls that the backend accepts are exact for that
-system. A primitive that cannot preserve the requested physical-time
+$\Sigma=(X,\Xi,V)$. Primitive calls that the backend accepts are exact for
+that system and the supplied evaluation universe. A primitive that cannot
+preserve the requested physical-time
 semantics raises `UnsupportedTemporalParameterError`; another unsupported
 reachability computation raises `UnsupportedReachabilityError`. A separate
 `supports(parameter)` query is not part of the contract because support may
 differ between constrained reachability and existential invariance even for
 the same parameter.
 
-Before backend propagation, `reach()` applies the exact local-selection and
-zero-duration laws from `LOGIC.md`, then converts the remaining formula to the
-supported negation-normal form. This ordering reduces every `0]` and `0)` case
-without asking an untimed backend to interpret elapsed time. In particular,
-zero-duration `Release` and `WeakUntil` formulas are reduced before the
-generic unsupported-node check.
+Before backend propagation, `existential_satisfying_states()` applies the
+exact local-selection and zero-duration laws from `LOGIC.md`, then converts
+the remaining formula to the supported negation-normal form. This ordering
+reduces every `0]` and `0)` case before backend support is considered. In
+particular, zero-duration `Release` formulas are reduced before
+the generic unsupported-node check.
 
 Negation may be complemented only at state-level leaves; it must not
 complement an existential temporal result as though it were another
-existential result. After the exact reductions, the initial generic
-propagation supports atoms, Boolean conjunction/disjunction, locally reducible
-selections, until, eventually, and always. Remaining release, weak-until, or
-negated temporal nodes raise `UnsupportedReachabilityError`.
+existential result. After the exact reductions, generic propagation supports
+atoms, Boolean conjunction/disjunction where the common-trajectory rules below
+permit them, locally reducible selections, and until, eventually, and always
+with state-predicate operands. Remaining release or temporally nested operands
+raise `UnsupportedReachabilityError`. Negated temporal formulas converted by
+NNF into supported conditions are accepted. This supported fragment and its
+explicit rejection policy are backend design choices, not limits of the logic.
 
 For this contract, a state predicate is a temporal-free Boolean combination
-of proposition and equality atoms, after applying any selector reduction that
-is independent of future time. It denotes one fixed `StateSet`. A formula
-whose truth depends on a future witness, a future prefix, or an absolute-time
+of constants, proposition atoms, and equality atoms, after applying local
+reductions valid throughout the operand's evaluation scope. It denotes one
+fixed `StateSet`. A formula whose truth depends on a future witness, a future prefix, or an absolute-time
 branch is not a state predicate merely because a recursive call has produced
 a `StateSet` for it.
 
-Disjunction unions computed results. Conjunction intersects them, but the
-intersection is certified only when all operand results are certified and the
-conjunction is state-local, or when `certify_conjunction()` establishes a
-common-trajectory argument. Temporal primitives are directly certified for
-state-predicate operands. If an operand already denotes a temporal goal, a
-recursive TLT computation may still produce a set, but it remains uncertified
-unless the backend establishes the missing common-trajectory argument. The
-generic interface supplies no such temporal-composition certificate, so it
-must conservatively return `certified=False` in that case.
+§“Systems and existential state satisfaction” does not assert that $\Xi(x,a)$
+is nonempty for every state. Let $D_a=\{x\in X:\Xi(x,a)\ne\varnothing\}$.
+A state predicate with valuation set $A$ has existential satisfaction set
+$A\cap D_a$; `true` has set $D_a$, not necessarily $X$. The existing primitive
+can compute $D_a$ exactly via
+`backend.existential_invariance(backend.state_space, RelativeParameter(0), anchor, universe)`:
+the empty window leaves only trajectory existence. Reusing this primitive is
+a design choice; if it cannot compute the set, raise an unsupported error
+rather than assume $D_a=X$.
+
+Primitive targets, constraints, and invariance operands are valuation sets
+$A\subseteq X$, not existential satisfaction sets. Complement state valuations
+before restriction to $D_a$. Zero-duration reductions to `true` or a state
+predicate still require trajectory existence; reducing syntax does not
+promise that a backend can compute the resulting set.
+
+Disjunction is computed by exact union because existential quantification
+distributes over disjunction. Conjunction is computed by exact intersection
+of valuation sets followed by restriction to $D_a$ when every operand is a
+state predicate. It is also exact when exactly one
+operand is trajectory-dependent and every other operand is an anchor-local
+state predicate: those state predicates depend only on the common initial
+state. If two or more operands are trajectory-dependent, independently
+intersecting their existential state sets could combine different witness
+trajectories, so the generic interface raises `UnsupportedReachabilityError`.
+
+The temporal correspondences are used only in their domain from `LOGIC.md`:
+`Until(left, right, parameter)` calls `constrained_reach()` only when both
+operands are state predicates; `Eventually(body, parameter)` does so only when
+its body is a state predicate; and `Always(body, parameter)` calls
+`existential_invariance()` only when its body is a state predicate. A recursive
+call returning a `StateSet` does not turn a temporal operand into a state
+predicate.
 
 For a queried initial set `initial_states`, semantic existential reachability
 holds exactly when
 
 $$
 \texttt{initial\_states}
-\cap\operatorname{Sat}_{\mathcal S}^{\exists}(\varphi,a)
+\cap\operatorname{Sat}_{\Sigma}^{\exists}(\varphi,a)
 \neq\varnothing.
 $$
 
-The same check on `ReachResult.tlt_set` establishes true existential
-reachability only when `ReachResult.certified` is true. An uncertified
-intersection is a TLT computation result, not proof that one common
-trajectory satisfies the formula.
+Accordingly, reachability succeeds when
+`not initial_states.intersection(result).is_empty()` for the exact `StateSet`
+returned by `existential_satisfying_states()`.
 
 ### Selection during reachability propagation
 
@@ -493,31 +631,11 @@ selector therefore remains reducible when it is re-anchored beneath a
 temporal condition. An absolute selector beneath a temporal condition may
 choose different branches at different inspected times even though its window
 is also future-directed. The generic state-set-only primitives cannot replace
-it once at the outer anchor; such a formula requires a timed,
-trajectory-aware backend operation or must be rejected. At top level, or
-under Boolean connectives evaluated at the queried anchor, an absolute
-selector is locally reducible because that anchor is known.
-
-An untimed event backend may implement unparameterized reachability with:
-
-```python
-class EventReachabilityBackend(ReachabilityBackend, Protocol):
-    def predecessor(self, states: StateSet) -> StateSet: ...
-```
-
-Its constrained reachability, backward reachability, and invariance use the
-least/greatest fixed points specified in `LOGIC.md`. It supports omitted
-parameters and syntactically reducible zero-duration cases. Positive durations
-and absolute temporal conditions raise `UnsupportedTemporalParameterError`.
-The first backend returns only exactly converged fixed points; failure to
-establish exact convergence is an unsupported computation, not a certified
-widened result.
-An absolute selector at a known current anchor remains reducible without a
-time model, but an absolute selector inspected at future positions does not.
-A timed backend must retain physical-time durations and use the same resolved
-temporal windows as trace checking. Transition counts and minimum dwell-time
-bounds are not substitutes for physical time unless the represented state
-contains the clocks or residual timing needed to make them exact.
+it once at the outer anchor. Unless an exact local simplification eliminates
+the time dependence (for example, identical branches), the current protocol has no exact trajectory-aware
+operation for that case and the formula is rejected. At top
+level, or under Boolean connectives evaluated at the queried anchor, an
+absolute selector is locally reducible because that anchor is known.
 
 ## Errors and package exports
 
@@ -527,13 +645,18 @@ The public exception hierarchy is:
 class IntervalLogicError(Exception): ...
 class FormulaSyntaxError(IntervalLogicError, ValueError): ...
 class TraceValidationError(IntervalLogicError, ValueError): ...
+class UnsupportedTraceError(IntervalLogicError, NotImplementedError): ...
+class ReachabilityValidationError(IntervalLogicError, ValueError): ...
 class UnsupportedReachabilityError(IntervalLogicError, NotImplementedError): ...
 class UnsupportedTemporalParameterError(UnsupportedReachabilityError): ...
 ```
 
-The package root exports every public type and function named in this
-document. It does not export internal parser tokens, evaluator contexts,
-normalization helpers, or backend implementation details.
+The package root exports package-defined public types, aliases, exceptions,
+and module-level functions specified here. Methods remain on their classes;
+imported dependencies such as `Real`, `Mapping`, `Protocol`, and `portion`
+need not be re-exported (an interface design choice). Internal parser tokens,
+evaluator contexts, normalization helpers, and backend implementation details
+are not exported.
 
 ## Verification requirements
 
@@ -545,22 +668,65 @@ The test suite must cover:
   the single future-directed `temporal_window()` resolution;
 - the fundamental local satisfaction relation and its diagonal agreement with
   anchored denotation;
-- complete `expand_derived()` lowering to the minimal grammar, apart from the
-  optional direct `WeakUntil` extension;
+- complete `expand_derived()` lowering and atom-only negation in NNF; these
+  transforms and `simplify()` preserve local truth and masks, including
+  zero-duration conditions and positive relative selectors;
 - exact atom and Boolean trace denotation;
-- re-anchored selection, until, eventually, always, release, weak until, and
-  every zero-duration law;
-- the common future restriction of absolute selection and absolute
-  conditions;
+- anchored selection through operand-local truth sets, including an operand
+  containing a temporal condition, plus until, eventually, always, release,
+  and every zero-duration law;
+- the common future restriction of absolute selection and absolute conditions,
+  positive-relative selector equivalence under conditions, and the concrete
+  re-anchoring and mask-counterexample formulas above;
 - distinct `TimeSet` and multidimensional `StateSet` output domains;
-- the `ReachabilityBackend`/semantic-system distinction and the
-  `ReachResult.tlt_set`/true-satisfaction-set distinction;
-- existential initial-set checks, exact primitive fixed points, unsupported
-  quantitative rejection, and every local selector reduction;
+- the `ReachabilityBackend`/semantic-system distinction and exact
+  `existential_satisfying_states()` results;
+- propagation of one reachability evaluation universe through relative,
+  absolute, and omitted temporal operations, including rejection of an anchor
+  outside that universe;
+- existential initial-set checks, unsupported exact computations, and every
+  local selector reduction;
 - reachability reduction of all `0]` and `0)` laws before unsupported temporal
   operators are rejected;
-- rejection of future-position absolute selection by a backend without the
-  required timed trajectory operation;
-- certified state-local conjunction and uncertified leaking temporal
-  conjunction;
-- public exports and the absence of legacy names from canonical examples.
+- rejection of future-position absolute selection with unresolved time-dependent
+  branches, and acceptance when exact local simplification eliminates them;
+- exact state-local and state-plus-one-temporal conjunction, and rejection of
+  conjunctions with multiple independently computed temporal operands;
+- empty and nonempty trajectory families: state-local results and zero-duration
+  reductions account for $D_a$, while primitive operands remain valuation sets;
+  existential temporal results must never be negated by complement;
+- until witnesses at the anchor, excluded endpoints, left-false witnesses, and
+  prefixes before absolute windows, including disconnected universes;
+- empty windows from absolute intervals in the past, omitted windows, empty
+  universes, and exact continuous-time evaluation without sampling;
+- natural-value validation, default coverage, missing signals, signal-to-signal
+  equality, quoted-name round trips, and unsupported exact trace computations;
+- charging-station invariants permitting repeated zeros and rejecting repeated
+  positive IDs, with multidimensional relations preserved;
+- public exports and consistent canonical names throughout the contract.
+
+
+## Upstream basis and remaining scope
+
+This revision uses the following specific upstream requirements. Added
+verification cases enforce the corresponding rules, not implementation history.
+
+| Substantive change | Basis in `LOGIC.md` |
+| --- | --- |
+| Remove weak-until nodes, methods, notation, horizon helper, and tests | §“Formulas and temporal basis” defines strong until and derived release, but neither weak until nor `H_rho(a)`. An extension cannot claim an upstream definition that is absent. |
+| Clarify omission, canonical formatting, equality sugar, and numeric validation | §“Temporal parameters” distinguishes real durations, absolute intervals, and omitted syntax; §“Signals and atoms” defines natural terms and inequality as negated equality. Coercion, quoting, traversal, and variadic Boolean conventions are interface choices. |
+| Preserve masks as well as truth in general rewrites | §“Anchored mask denotation”, §“Selection and re-anchoring”, and the explicit counterexample in §“Zero-duration laws” distinguish the two observations. |
+| Complete trace representation, strong-until prefix, re-anchoring, and empty-window requirements | §“Trajectories, states, and represented time”, §“Temporal windows”, §“Local satisfaction”, and §“Absolute windows”. Region storage and error behavior are design choices implementing exact represented-time semantics. |
+| Distinguish atom valuation, backward reachability, and existential output; handle trajectory existence | §“Systems and existential state satisfaction” explicitly quantifies over $\Xi(x,a)$ without asserting nonemptiness. §“Reachability operators for state predicates” defines backward initial-state sets and implies the empty-window invariance computation of $D_a$. Reusing that primitive is a design choice. |
+| Clarify NNF support and the scope of local selector reductions | §“Negation dualities” supplies NNF laws; §“Local satisfaction” re-anchors operands; §“Reachability operators for state predicates” requires one common trajectory. The limited exact backend fragment is a design choice. |
+| Require state-space consistency and nonzero-only uniqueness | §“Systems and existential state satisfaction” makes all state-set operations relative to $X$; §“Charging-station example” explicitly permits repeated zero coordinates. |
+
+No contradictory upstream definition was found in these clauses. The absence
+of a trajectory-nonemptiness axiom is handled by the explicit existential
+quantifier, without adding that axiom. Weak until remains outside this contract
+pending an upstream definition; its dependent semantics are not chosen here.
+Arbitrary time sets/trajectories outside the interval-region representation and
+a general exact solver for all temporal formulas remain coverage limits of the
+chosen interfaces, with explicit failure rather than altered semantics.
+Universal trajectory quantification remains outside the first backend, as
+specified in §“Systems and existential state satisfaction”.

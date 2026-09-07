@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 from .ast import (
@@ -24,13 +25,12 @@ from .ast import (
     Signal,
     Until,
     VacuousSelection,
-    WeakUntil,
 )
 from .errors import FormulaSyntaxError
-from .temporal import TemporalParameter, coerce_temporal_parameter
+from .temporal import NUMBER_PATTERN, TemporalParameter, coerce_temporal_parameter
 
 
-_NUMBER = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+_NUMBER = re.compile(NUMBER_PATTERN)
 _NATURAL = re.compile(r"\d+")
 _IDENTIFIER = re.compile(r"(?:[^\W\d]|_)\w*", re.UNICODE)
 
@@ -40,14 +40,34 @@ def parse_formula(source: str) -> Formula:
 
     if not isinstance(source, str):
         raise TypeError("source must be a string")
-    return _Parser(source).parse()
+    # A ')' after a postfix duration can close either the parameter or an
+    # enclosing expression. Prefer the usual grouping interpretation; retry
+    # only these lexical choices if the enclosing parse fails. This preserves
+    # both bare-duration formatting and explicit d) syntax at arbitrary depth.
+    pending = [{}]
+    furthest_error = None
+    while pending:
+        parser = _Parser(source, pending.pop())
+        try:
+            return parser.parse()
+        except FormulaSyntaxError as error:
+            if furthest_error is None or error.position > furthest_error.position:
+                furthest_error = error
+            prefix = {}
+            for position, consume in parser.duration_choices:
+                if position not in parser.forced_closes:
+                    pending.append(prefix | {position: not consume})
+                prefix[position] = consume
+    raise furthest_error
 
 
 class _Parser:
-    def __init__(self, source: str):
+    def __init__(self, source: str, forced_closes: dict[int, bool] | None = None):
         self.source = source
         self.position = 0
         self.group_depth = 0
+        self.forced_closes = {} if forced_closes is None else forced_closes
+        self.duration_choices: list[tuple[int, bool]] = []
 
     def parse(self) -> Formula:
         self._skip()
@@ -156,23 +176,31 @@ class _Parser:
         else:
             return None
 
+        depth_before = self.group_depth
+        if close == ")":
+            self.group_depth += 1
         try:
             inside = self._parse_equivalent()
             if self._match_symbol(","):
                 outside = self._parse_equivalent()
                 self._expect_symbol(close, f"expected {close!r} to close selection")
+                self.group_depth = depth_before
                 parameter = self._parse_parameter_suffix()
                 return Selection(inside, outside, parameter)
             self._expect_symbol(close, f"expected {close!r} to close selection")
+            self.group_depth = depth_before
             restrictive = self._match_symbol("*")
             parameter = self._parse_parameter_suffix()
-            if restrictive:
+            trailing_star = self._match_symbol("*")
+            if restrictive or trailing_star:
                 return RestrictiveSelection(inside, parameter)
             return VacuousSelection(inside, parameter)
         except FormulaSyntaxError:
             if self.position == start:
                 return None
             raise
+        finally:
+            self.group_depth = depth_before
 
     def _parse_term_or_name(self) -> NumericTerm | str | None:
         self._skip()
@@ -193,6 +221,16 @@ class _Parser:
 
     def _parse_name(self) -> str | None:
         self._skip()
+        if not self._at_end and self.source[self.position] == '"':
+            start = self.position
+            try:
+                name, length = json.JSONDecoder().raw_decode(self.source[start:])
+            except json.JSONDecodeError:
+                self._fail("invalid JSON quoted name", start)
+            if not name:
+                self._fail("a quoted name must not be empty", start)
+            self.position += length
+            return name
         if not self._at_end and self.source[self.position] == "`":
             start = self.position
             self.position += 1
@@ -220,10 +258,8 @@ class _Parser:
     def _match_temporal_operator(self):
         for word, node in (
             ("until", Until),
-            ("weak_until", WeakUntil),
             ("release", Release),
             ("U", Until),
-            ("W", WeakUntil),
             ("R", Release),
         ):
             if self._match_keyword(word, allow_parameter_suffix=True):
@@ -254,7 +290,11 @@ class _Parser:
             if not self._at_end and self.source[self.position] == "]":
                 self.position += 1
             elif not self._at_end and self.source[self.position] == ")":
-                if self.group_depth == 0 or self._duration_close_has_operand_after():
+                consume = self.group_depth == 0 or self._duration_close_has_operand_after()
+                if self.group_depth:
+                    consume = self.forced_closes.get(self.position, consume)
+                    self.duration_choices.append((self.position, consume))
+                if consume:
                     self.position += 1
 
         text = self.source[start:self.position]
@@ -270,18 +310,18 @@ class _Parser:
         if position >= len(self.source):
             return False
         remaining = self.source[position:]
-        if remaining[0] in ")⟩>,&|∧∨↔→":
+        if remaining[0] in ")⟩>,&|∧∨↔→_*":
             return False
         if remaining.startswith(("<->", "->")):
             return False
         operator_words = (
-            "and", "or", "equivalent", "implies", "until", "weak_until", "release",
-            "U", "W", "R",
+            "and", "or", "equivalent", "implies", "until", "release",
+            "U", "R",
         )
         for word in operator_words:
             if remaining.startswith(word):
                 end = len(word)
-                parameterized = word in {"until", "weak_until", "release", "U", "W", "R"}
+                parameterized = word in {"until", "release", "U", "R"}
                 if (
                     end == len(remaining)
                     or not (remaining[end].isalnum() or remaining[end] == "_")

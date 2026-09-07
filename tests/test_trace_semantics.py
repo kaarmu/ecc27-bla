@@ -83,10 +83,8 @@ class TraceSemanticsTests(unittest.TestCase):
             il.satisfying_times("always_5] p", trace), P.closedopen(4, 5)
         )
 
-    def test_weak_until_horizon_and_release(self):
+    def test_release(self):
         trace = il.Trace(self.universe, {"p": P.closedopen(0, 4)})
-        self.assertTrue(il.satisfies("p W_3] false", trace, 0))
-        self.assertFalse(il.satisfies("p W_5] false", trace, 0))
         for at in (0, 3, 8):
             self.assertEqual(
                 il.satisfies("false R_2] p", trace, at),
@@ -157,8 +155,6 @@ class TraceSemanticsTests(unittest.TestCase):
                 "p U_0 q": False,
                 "p R_0] q": q,
                 "p R_0 q": True,
-                "p W_0] q": p or q,
-                "p W_0 q": True,
                 "<p,q>_0]": p,
                 "<p,q>_0": q,
             }

@@ -2,10 +2,8 @@
 
 `interval-logic` implements the language defined by [`LOGIC.md`](LOGIC.md).
 [`CODE.md`](CODE.md) is the corresponding Python interface contract. One
-trajectory-satisfaction relation feeds two distinct query domains:
-
-- complete-trace checking returns represented physical-time sets;
-- reachability checking returns symbolic, multidimensional state sets.
+trajectory-satisfaction relation supports complete-trace checking over
+represented physical-time sets.
 
 ## Formula construction
 
@@ -75,12 +73,3 @@ denotation, `satisfies(formula, trace, at)` for local truth, and
 conditions retain their distinct roles, but every temporal parameter uses the
 same future-directed window. In particular, an absolute interval is clipped
 at the current anchor for selection as well as for conditions.
-
-## Symbolic reachability
-
-Implement `ReachabilityBackend` with a genuine multidimensional `StateSet`,
-then call `reach(formula, backend, anchor)`. The returned `ReachResult` contains
-the computed TLT set as `tlt_set` and a `certified` flag. Temporal conjunctions
-remain uncertified unless the backend proves that the operands share a
-satisfying trajectory. Untimed backends must reject positive-duration and
-absolute conditions instead of interpreting seconds as transition counts.

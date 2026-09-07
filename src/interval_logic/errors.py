@@ -22,9 +22,17 @@ class TraceValidationError(IntervalLogicError, ValueError):
     """A complete trace or evaluation request is invalid."""
 
 
+class UnsupportedTraceError(IntervalLogicError, NotImplementedError):
+    """An exact trace computation cannot be represented or evaluated."""
+
+
+class ReachabilityValidationError(IntervalLogicError, ValueError):
+    """A reachability query or state-set binding is invalid."""
+
+
 class UnsupportedReachabilityError(IntervalLogicError, NotImplementedError):
-    """A reachability backend cannot soundly evaluate the requested formula."""
+    """The backend cannot compute the exact existential satisfaction set."""
 
 
 class UnsupportedTemporalParameterError(UnsupportedReachabilityError):
-    """A reachability backend cannot interpret a temporal parameter."""
+    """A backend cannot preserve the requested represented-time semantics."""

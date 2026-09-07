@@ -35,9 +35,7 @@ class RewritingTests(unittest.TestCase):
             il.expand_derived(il.VacuousSelection(self.p, 3)),
             il.Selection(self.p, il.Boolean(True), 3),
         )
-        self.assertIsInstance(
-            il.expand_derived(il.WeakUntil(self.p, self.q, 3)), il.WeakUntil
-        )
+        self.assertEqual(il.expand_derived(il.And(())), il.Boolean(True))
 
     def test_expand_derived_reaches_the_minimal_grammar(self):
         source = il.Equivalent(
@@ -53,7 +51,6 @@ class RewritingTests(unittest.TestCase):
             il.And,
             il.Selection,
             il.Until,
-            il.WeakUntil,
         )
         pending = [expanded]
         while pending:

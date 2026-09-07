@@ -18,7 +18,6 @@ from .ast import (
     RestrictiveSelection,
     Selection,
     VacuousSelection,
-    WeakUntil,
     Until,
     as_formula,
     formula_key,
@@ -32,16 +31,18 @@ def simplify(formula: Formula | str) -> Formula:
 
 
 def expand_derived(formula: Formula | str) -> Formula:
-    """Lower every abbreviation to the minimal grammar plus weak until."""
+    """Lower every abbreviation to the minimal grammar."""
 
     formula = as_formula(formula)
     match formula:
+        case And(operands=()):
+            return Boolean(True)
         case Boolean(value=False):
             return Not(Boolean(True))
         case Or(operands=operands):
-            return Not(
+            return Not(expand_derived(
                 And(Not(expand_derived(operand)) for operand in operands)
-            )
+            ))
         case Implies(left=left, right=right):
             return expand_derived(Or((Not(left), right)))
         case Equivalent(left=left, right=right):
@@ -61,10 +62,6 @@ def expand_derived(formula: Formula | str) -> Formula:
         case Release(left=left, right=right, parameter=parameter):
             return expand_derived(
                 Not(Until(Not(left), Not(right), parameter))
-            )
-        case WeakUntil(left=left, right=right, parameter=parameter):
-            return WeakUntil(
-                expand_derived(left), expand_derived(right), parameter
             )
         case _:
             children = tuple(expand_derived(child) for child in formula.children)
@@ -222,10 +219,5 @@ def _nnf(formula: Formula, negated: bool) -> Formula:
         case Release(left=left, right=right, parameter=parameter):
             node = Until if negated else Release
             return node(_nnf(left, negated), _nnf(right, negated), parameter)
-        case WeakUntil(left=left, right=right, parameter=parameter):
-            rebuilt = WeakUntil(
-                _nnf(left, False), _nnf(right, False), parameter
-            )
-            return Not(rebuilt) if negated else rebuilt
         case _:
             return Not(formula) if negated else formula

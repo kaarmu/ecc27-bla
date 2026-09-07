@@ -1,11 +1,12 @@
 [project]
 name = "interval-logic"
 version = "0.3.0"
-description = "Trajectory semantics with trace and symbolic reachability queries"
+description = "Interval formulas and complete-trajectory trace semantics"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "portion>=2.6.1",
+    "pyspect[symbolic]",
 ]
 
 [build-system]
@@ -17,3 +18,6 @@ packages = ["src/interval_logic"]
 
 [dependency-groups]
 dev = []
+
+[tool.uv.sources]
+pyspect = { path = "../../Reachability/pyspect", editable = true }
