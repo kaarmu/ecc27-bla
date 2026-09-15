@@ -111,6 +111,13 @@ class GenericReachabilityTests(unittest.TestCase):
         with self.assertRaises(il.UnsupportedReachabilityError):
             self.states('eventually p and eventually q')
 
+    def test_interval_contradiction_needs_no_temporal_backend_call(self):
+        formula = 'always_[0,2] p and always_[1,2] not p'
+        self.assertEqual(self.states(formula), frozenset())
+        self.assertEqual(self.backend.calls, [])
+        with self.assertRaises(il.ReachabilityValidationError):
+            self.states(f'({formula}) and missing')
+
     def test_negation_is_not_complement_of_existential_results(self):
         self.assertEqual(self.states('eventually p'), frozenset({'start', 'p'}))
         self.assertEqual(self.states('not eventually p'), frozenset({'start', 'q'}))

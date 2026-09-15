@@ -140,3 +140,18 @@ class PyspectBackendTests(unittest.TestCase):
                 self.backend.existential_invariance(self.backend.state_space, None, anchor, FULL)
         with self.assertRaises(il.ReachabilityValidationError):
             self.states('j = 0', anchor=4, universe=P.closed(0, 3))
+
+    def test_proven_temporal_contradictions_precede_propagation(self):
+        formula = 'always_[1,5) j = 1 and always_[1.5,3) j = 2'
+        self.assertTrue(self.states(formula).is_empty())
+        # No temporal backend call is needed, even on a finite universe.
+        self.assertTrue(self.states(formula, universe=P.closed(0, 5)).is_empty())
+        self.assertFalse(self.states(formula, anchor=3).is_empty())
+        unresolved = 'always_[1,2) j = 1 and always_[3,4) j = 2'
+        with self.assertRaises(il.UnsupportedReachabilityError):
+            self.states(unresolved)
+        with self.assertRaises(il.ReachabilityValidationError):
+            self.states(f'({formula}) and missing = 0')
+        # NNF may expose contradictory Always conditions after initial rewriting.
+        negated = 'not eventually_[1,5) j != 1 and always_[1.5,3) j = 2'
+        self.assertTrue(self.states(negated).is_empty())

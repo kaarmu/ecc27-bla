@@ -10,6 +10,8 @@ from typing import Any, TypeAlias
 from .temporal import (
     TemporalParameter,
     TemporalParameterInput,
+    TimeSet,
+    TimeValue,
     coerce_temporal_parameter,
     temporal_parameter_key,
 )
@@ -113,10 +115,12 @@ class Formula(ABC):
 
         return replace(self, *functions)
 
-    def simplify(self) -> Formula:
+    def simplify(
+        self, *, anchor: TimeValue | None = None, universe: TimeSet | None = None,
+    ) -> Formula:
         from .simplify import simplify
 
-        return simplify(self)
+        return simplify(self, anchor=anchor, universe=universe)
 
     def _with_children(self, children: tuple[Formula, ...]) -> Formula:
         if len(children) != len(self.children):

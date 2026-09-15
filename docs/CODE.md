@@ -218,7 +218,7 @@ formula.eventually(parameter=None)
 formula.always(parameter=None)
 formula.release(other, parameter=None)
 formula.replace(*functions)
-formula.simplify()
+formula.simplify(anchor=None, universe=None)
 ```
 
 `NumericTerm.equals()` and `NumericTerm.not_equals()` construct equality and
@@ -257,7 +257,8 @@ parse_formula(source: str) -> Formula
 format_formula(formula: Formula | str, *, unicode: bool = True) -> str
 format_term(term: NumericTerm | int, *, unicode: bool = True) -> str
 replace(formula: Formula | str, *functions: Callable[[Formula], Formula | str]) -> Formula
-simplify(formula: Formula | str) -> Formula
+simplify(formula: Formula | str, *, anchor: TimeValue | None = None,
+         universe: TimeSet | None = None) -> Formula
 expand_derived(formula: Formula | str) -> Formula
 to_nnf(formula: Formula | str) -> Formula
 ```
@@ -283,18 +284,70 @@ forms. Inequality is represented by `Not(Equal(...))`; these normalizations
 preserve both local truth and anchored masks.
 
 `simplify()` preserves both local satisfaction and anchored mask denotation
-at every represented anchor. It may normalize commutative Boolean
-operands, apply constants, complements, idempotence, absorption, double
-negation, reflexive equality, and componentwise selection negation. It must
-not treat a selection as a condition. The local laws in §“Selection and
+within the supplied temporal context. `Formula.simplify()` accepts the same
+keyword-only arguments. An omitted `universe` (including `None`) defaults to
+`[0, +inf)`; an omitted `anchor` (including `None`) remains unknown:
+
+| Context supplied | Required scope of equivalence |
+| --- | --- |
+| Neither | Every anchor in the full nonnegative universe `[0, +inf)`; no particular anchor is assumed. |
+| `anchor` only | That anchor, with the full nonnegative universe `[0, +inf)`. |
+| `universe` only | Every represented anchor in that universe; no default anchor is chosen. |
+| Both | That anchor and that exact universe. |
+
+Times and finite universe endpoints use the existing exact rational validation.
+Invalid argument types raise `TypeError`; invalid values, negative/nonfinite
+anchors, or anchors outside the universe raise `ValueError`. Disconnected
+universes are allowed, and an empty universe is allowed without an anchor.
+The result is an ordinary formula, without attached context: retain the original
+formula when queries may use different anchors or universes.
+
+The simplifier normalizes commutative Boolean operands and applies constants,
+complements, idempotence, absorption, double negation, reflexive equality,
+incompatible literal assignments to the same signal, and componentwise selection
+negation. It also uses provable temporal-window emptiness and nonemptiness:
+empty windows make always/release true and eventually/until false;
+`Always(True)` and `Eventually(False)` simplify unconditionally;
+`Always(False)` and `Eventually(True)` simplify when the window is known nonempty.
+
+Conjoined `Always` conditions become false when their windows provably share a
+represented time and their bodies are syntactically contradictory. This includes
+complementary bodies, Boolean contradictions, and incompatible signal-literal
+assignments. Conditions with identical bodies can be removed when their window
+is contained in another conjunct's window. These rules are repeated with Boolean
+simplification until stable. They do not decide arbitrary satisfiability or
+extract availability from arbitrary formulas. An unreduced formula is not
+evidence of consistency.
+
+For example, `always_[1,5) p and always_[1.5,3) not p` simplifies to false
+with `anchor=0`, but not with neither argument or just `universe=[0,5]`.
+At anchor 3 the second conjunct expires; at anchor 5 both expire. If the supplied
+universe excludes `[1.5,3)`, it contains no conflicting times.
+By contrast, `eventually_[1,+inf) true` simplifies to true even without arguments:
+its window is nonempty at every anchor in the default full-time universe. With
+the explicit universe `{0}`, it simplifies to false instead. Always pass the
+actual universe when specializing a formula for a finite or disconnected trace.
+
+Known context propagates through Boolean operators. Inside temporal operands and
+selection branches, the outer anchor is discarded, while known universe
+information is retained. These operands may be inspected at other times. With
+unknown anchor, the simplifier uses only facts valid at every represented
+anchor. The supplied or default universe determines which future points are
+represented. Original temporal parameters are retained unless their operator
+is removed, so no disconnected temporal parameters are introduced.
+
+The simplifier must not treat a selection as a condition. The local laws in §“Selection and
 re-anchoring” and §“Zero-duration laws” are not unrestricted mask rewrites:
 `Eventually(p, RelativeParameter(0, True))` has a globally valued mask and
 cannot generally simplify to `p`; positive relative selection cannot generally
 simplify to its inside operand. Local-only reductions belong to satisfaction
 and reachability evaluation with anchor scope respected. They must not mutate
-the syntax used by `denote()`.
+the syntax used by `denote()`. In particular, supplying an anchor does not permit
+replacing a singleton temporal condition by its operand when their full masks
+differ.
 
-`expand_derived()` and `to_nnf()` also preserve both observations. User-directed
+`expand_derived()` and `to_nnf()` preserve both observations for every universe;
+they do not inherit `simplify()`'s default full-time assumption. User-directed
 `replace()` has no semantic-preservation guarantee.
 
 `expand_derived()` recursively lowers every form that `LOGIC.md` defines as an
@@ -541,12 +594,21 @@ reachability computation raises `UnsupportedReachabilityError`. A separate
 differ between constrained reachability and existential invariance even for
 the same parameter.
 
-Before backend propagation, `existential_satisfying_states()` applies the
-exact local-selection and zero-duration laws from `LOGIC.md`, then converts
-the remaining formula to the supported negation-normal form. This ordering
+Before backend propagation, `existential_satisfying_states()` validates all atoms
+in the original formula, even if a subsequent reduction removes them. It then
+simplifies using the actual query anchor and universe, applies the exact
+local-selection and zero-duration laws from `LOGIC.md`, and converts the
+remaining formula to the supported negation-normal form. Context-aware
+simplification is also applied after NNF and within local reductions with their
+proper anchor scope. This ordering
 reduces every `0]` and `0)` case before backend support is considered. In
 particular, zero-duration `Release` formulas are reduced before
-the generic unsupported-node check.
+the generic unsupported-node check. A provable overlapping `Always` contradiction
+returns an empty state set without temporal propagation, including when the
+backend would not support the original conjunction or represented-time mask.
+Unresolved correlated conjunctions and unsupported temporal nesting continue
+to raise unsupported errors; simplification does not delegate general solving
+to pyspect.
 
 Negation may be complemented only at state-level leaves; it must not
 complement an existential temporal result as though it were another

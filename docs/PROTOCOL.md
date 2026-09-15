@@ -142,6 +142,7 @@ $$
 
 If $I=\varnothing$, the request is trivially infeasible and negotiations can be terminated without agreement.
 
+**Note.** The request contract could be redefined under the interpretation "Find a request contract 'charge for $d$ duration' within $I$ interval." Under that interpretation, one could imagine new syntax and semantics for contracts, such as $\exists_I\left\langle\top\;\middle|\;\square_d(\textit{job}=k)\right\rangle.$
 ## 1. Project stored reservations to the requested job
 
 **Storage design.** Store each accepted allocation as its concrete job ID

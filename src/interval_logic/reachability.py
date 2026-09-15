@@ -75,7 +75,10 @@ def existential_satisfying_states(
         if isinstance(node, (Proposition, Equal)):
             context.atoms[node] = backend.atomic_states(node)
         pending.extend(node.children)
-    reduced = to_nnf(_reduce_local(formula, anchor, universe))
+    formula = simplify(formula, anchor=anchor, universe=universe)
+    reduced = simplify(
+        to_nnf(_reduce_local(formula, anchor, universe)), anchor=anchor, universe=universe
+    )
     return context.evaluate(reduced).normalize()
 
 
@@ -121,7 +124,7 @@ def _reduce_local(formula: Formula, anchor: Fraction | None, universe: TimeSet) 
     else:
         children = tuple(_reduce_local(child, anchor, universe) for child in formula.children)
     rebuilt = formula._with_children(children) if children != formula.children else formula
-    return simplify(rebuilt)
+    return simplify(rebuilt, anchor=anchor, universe=universe)
 
 
 def _is_state_predicate(formula: Formula) -> bool:
