@@ -221,7 +221,8 @@ def _simplify(formula: Formula, context: _Context) -> Formula:
             return Not(operand)
         case And(operands=operands):
             combined = _combine(And, (_simplify(item, context) for item in operands))
-            return _simplify_always_conjunction(combined, context)
+            combined = _simplify_always_conjunction(combined, context)
+            return _prune_blocked_eventually(combined, context)
         case Or(operands=operands):
             return _combine(Or, (_simplify(item, context) for item in operands))
         case Implies(left=left, right=right):
@@ -246,6 +247,10 @@ def _simplify(formula: Formula, context: _Context) -> Formula:
                     )
                     if unconditional or context.nonempty(result.parameter):
                         return result.body
+            if isinstance(result, Always):
+                covered = _cover_duration(result, context)
+                if covered is not None:
+                    return covered
             return result
 
 
@@ -272,7 +277,131 @@ def _simplify_always_conjunction(formula: Formula, context: _Context) -> Formula
                     break
                 if context.subset(right.parameter, left.parameter):
                     removed.add(right)
-    return _combine(And, (item for item in formula.operands if item not in removed))
+    kept = _combine(And, (item for item in formula.operands if item not in removed))
+    return _merge_always_windows(kept)
+
+
+def _merge_always_windows(formula: Formula) -> Formula:
+    """Rejoin coverage of one body over windows that meet or overlap.
+
+    ``always_A body and always_B body`` requires the body exactly throughout
+    ``A | B``, so a connected union becomes a single condition. A disconnected
+    union stays grouped, since a temporal parameter must be connected.
+    """
+    if not isinstance(formula, And):
+        return formula
+    regions: dict[Formula, TimeSet] = {}
+    for item in formula.operands:
+        if isinstance(item, Always) and isinstance(item.parameter, AbsoluteParameter):
+            regions[item.body] = regions.get(item.body, P.empty()) | item.parameter.interval
+    joinable = {body: region for body, region in regions.items() if region.atomic}
+    if not joinable:
+        return formula
+    rewritten, emitted, changed = [], set(), False
+    for item in formula.operands:
+        if not (isinstance(item, Always) and item.body in joinable
+                and isinstance(item.parameter, AbsoluteParameter)):
+            rewritten.append(item)
+            continue
+        if item.body in emitted:
+            changed = True
+            continue
+        emitted.add(item.body)
+        joined = Always(item.body, AbsoluteParameter(joinable[item.body]))
+        changed |= joined != item
+        rewritten.append(joined)
+    return _combine(And, rewritten) if changed else formula
+
+
+def _grouped(node_type, body: Formula, region: TimeSet) -> Formula:
+    """Spell a possibly disconnected region as grouped connected conditions.
+
+    Temporal parameters must stay connected, so a universal condition becomes a
+    conjunction over the region's components and an existential one a
+    disjunction. Empty regions give the grouping operator's identity.
+    """
+    connective = And if node_type is Always else Or
+    return _combine(connective, (
+        node_type(body, AbsoluteParameter(component)) for component in region
+    ))
+
+
+def _duration_envelope(region: TimeSet, parameter: RelativeParameter) -> TimeSet:
+    """Union of the relative windows anchored at every time in ``region``."""
+    envelope = P.empty()
+    for component in region:
+        if component.upper is P.inf:
+            envelope |= component
+            continue
+        # Over a left-closed start component the union reaches the shifted upper
+        # bound; only a closed relative window attains it.
+        right = component.right if parameter.include_endpoint else P.OPEN
+        envelope |= P.Interval.from_atomic(
+            component.left, component.lower, component.upper + parameter.duration, right
+        )
+    return envelope
+
+
+def _cover_duration(formula: Always, context: _Context) -> Formula | None:
+    """Rewrite an absolute universal duration requirement as plain coverage.
+
+    Requiring a relative window at every start in the outer window is requiring
+    the body throughout the union of those windows, so
+    ``always_I always_d body`` becomes ``always_(I + [0,d)) body``. The outer
+    window is needed to know which starts are represented, so this needs an
+    anchor.
+    """
+    inner = formula.body
+    if context.anchor is None or not isinstance(formula.parameter, AbsoluteParameter):
+        return None
+    if not isinstance(inner, Always) or not isinstance(inner.parameter, RelativeParameter):
+        return None
+    envelope = _duration_envelope(context.window(formula.parameter), inner.parameter)
+    return _grouped(Always, inner.body, envelope)
+
+
+def _prune_blocked_eventually(formula: Formula, context: _Context) -> Formula:
+    """Drop the times a conjoined universal condition denies to a witness.
+
+    ``always_R psi and eventually_E phi`` cannot be witnessed inside ``R`` when
+    ``psi and phi`` is contradictory, so ``E`` loses ``R``. The remaining region
+    is exactly the one an offer can still use.
+    """
+    if not isinstance(formula, And):
+        return formula
+    blockers = [
+        item for item in formula.operands
+        if isinstance(item, Always) and isinstance(item.parameter, AbsoluteParameter)
+    ]
+    if not blockers:
+        return formula
+    changed = False
+
+    def denied(body: Formula) -> TimeSet:
+        region = P.empty()
+        for blocker in blockers:
+            # Bodies meet at a common inspected time, as in conjoined coverage.
+            both = _simplify(And((blocker.body, body)), context.reanchored())
+            if both == Boolean(False):
+                region |= blocker.parameter.interval
+        return region
+
+    def visit(node: Formula) -> Formula:
+        nonlocal changed
+        # Only monotone Boolean structure keeps every occurrence under the same
+        # blockers; temporal operands are inspected at other anchors.
+        if isinstance(node, (And, Or)):
+            return _combine(type(node), (visit(child) for child in node.operands))
+        if not (isinstance(node, Eventually) and isinstance(node.parameter, AbsoluteParameter)):
+            return node
+        region = node.parameter.interval - denied(node.body)
+        if region == node.parameter.interval:
+            return node
+        changed = True
+        return _grouped(Eventually, node.body, region)
+
+    result = visit(formula)
+    return result if changed else formula
 
 
 def _simplify_atom(formula: Formula) -> Formula:

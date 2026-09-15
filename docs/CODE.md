@@ -314,8 +314,10 @@ Conjoined `Always` conditions become false when their windows provably share a
 represented time and their bodies are syntactically contradictory. This includes
 complementary bodies, Boolean contradictions, and incompatible signal-literal
 assignments. Conditions with identical bodies can be removed when their window
-is contained in another conjunct's window. These rules are repeated with Boolean
-simplification until stable. They do not decide arbitrary satisfiability or
+is contained in another conjunct's window, and conjoined absolute windows over
+one body rejoin into the single condition `always_(A | B) body` whenever that
+union is connected. These rules are repeated with Boolean simplification until
+stable. They do not decide arbitrary satisfiability or
 extract availability from arbitrary formulas. An unreduced formula is not
 evidence of consistency.
 
@@ -327,6 +329,48 @@ By contrast, `eventually_[1,+inf) true` simplifies to true even without argument
 its window is nonempty at every anchor in the default full-time universe. With
 the explicit universe `{0}`, it simplifies to false instead. Always pass the
 actual universe when specializing a formula for a finite or disconnected trace.
+
+Two region rewrites relate a temporal parameter to the region an operand
+actually constrains. Both preserve local truth and anchored masks, because a
+temporal condition is globally valued at its anchor.
+
+**Duration coverage.** Requiring a relative window at every start of an absolute
+window requires the body throughout the union of those windows:
+
+```text
+always_I always_d body  ->  always_(I + [0,d)) body
+```
+
+The Minkowski sum uses the outer window `W_I(a)`, so this rewrite requires a
+known anchor; starts outside the represented universe or before the anchor
+impose nothing. A half-open `d)` always yields an open upper bound, `d]` keeps
+the start component's bound, and an unbounded start component is unchanged.
+The outer parameter must be absolute and the inner one relative.
+
+**Blocked existential pruning.** A conjoined universal condition removes the
+times at which an existential witness is impossible:
+
+```text
+always_R psi and eventually_E phi  ->  always_R psi and eventually_(E \ R) phi
+```
+
+The rewrite applies when `psi and phi` is syntactically contradictory under the
+same re-anchored test used for conjoined coverage. Both parameters must be
+absolute; it needs no anchor, since a witness in `W_E(a)` lies outside `R`
+exactly when it lies outside `W_R(a)`.
+
+Blockers are the conjunction's own `Always` operands, and they prune every
+`Eventually` reachable through nested conjunction and disjunction, so a grouped
+disjunction of start windows loses the blocked times alternative by alternative.
+Only that monotone Boolean structure is entered: never a negation, a selection,
+or a temporal operand, whose occurrences are inspected at other anchors. The
+rewrite does not apply to `Until`.
+
+Neither rewrite introduces a disconnected temporal parameter. A disconnected
+result is spelled as the grouping `LOGIC.md` allows for a single parameter: a
+conjunction of universal conditions, or a disjunction of existential ones, over
+the region's connected components. An empty region gives that connective's
+identity, so a fully blocked existential becomes false.
 
 Known context propagates through Boolean operators. Inside temporal operands and
 selection branches, the outer anchor is discarded, while known universe

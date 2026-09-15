@@ -147,6 +147,23 @@ class ContextSimplificationTests(unittest.TestCase):
         self.assertIsInstance(mixed.simplify(), il.And)
         self.assertIsInstance(mixed.simplify(anchor=2), il.Always)
 
+    def test_meeting_coverage_windows_rejoin(self):
+        joined = il.Always(self.p, P.closedopen(1, 2)) & il.Always(self.p, P.closedopen(2, 3))
+        self.assertEqual(joined.simplify(), il.Always(self.p, P.closedopen(1, 3)))
+        overlapping = il.Always(self.p, P.closed(1, 4)) & il.Always(self.p, P.closedopen(3, 6))
+        self.assertEqual(overlapping.simplify(), il.Always(self.p, P.closedopen(1, 6)))
+        # A disconnected union stays grouped; a parameter must be connected.
+        apart = il.Always(self.p, P.closedopen(1, 2)) & il.Always(self.p, P.closedopen(3, 4))
+        self.assertEqual(apart.simplify(), apart)
+        # Different bodies and relative parameters are untouched.
+        bodies = il.Always(self.p, P.closedopen(1, 2)) & il.Always(self.q, P.closedopen(2, 3))
+        self.assertEqual(bodies.simplify(), bodies)
+        relative = il.Always(self.p, 2) & il.Always(self.p, P.closedopen(1, 2))
+        self.assertEqual(relative.simplify(), relative)
+        trace = il.Trace(FULL, {'p': P.closedopen(1, 3), 'q': P.closed(0, 9)})
+        for formula in (joined, overlapping, apart, bodies, relative):
+            self.assert_observations(formula, trace, [0, 1, 2, 4])
+
     def test_nested_operands_and_selection_masks_do_not_inherit_anchor(self):
         trace = il.Trace(P.closed(0, 5), {'p': P.closed(0, 5)})
         formulas = [
@@ -221,6 +238,73 @@ class ContextSimplificationTests(unittest.TestCase):
         self.assertEqual(il.Eventually(self.p).simplify(universe=P.empty()), il.Boolean(False))
         self.assertEqual(il.Always(self.p).simplify(universe=P.empty()), il.Boolean(True))
 
+
+    def test_duration_coverage_becomes_a_plain_region(self):
+        cover = il.Always(il.Always(self.p, 1), P.closedopen(1, 5))
+        self.assertEqual(cover.simplify(anchor=0), il.Always(self.p, P.closedopen(1, 6)))
+        # The outer window decides which starts are represented.
+        self.assertEqual(cover.simplify(anchor=3), il.Always(self.p, P.closedopen(3, 6)))
+        self.assertEqual(cover.simplify(anchor=6), il.Boolean(True))
+        self.assertEqual(cover.simplify(), cover)
+        self.assertEqual(cover.simplify(universe=P.closed(0, 9)), cover)
+        # A closed relative window attains the shifted upper bound.
+        closed = il.Always(il.Always(self.p, '1]'), P.closed(1, 5))
+        self.assertEqual(closed.simplify(anchor=0), il.Always(self.p, P.closed(1, 6)))
+        self.assertEqual(il.Always(il.Always(self.p, 1), P.closed(1, 5)).simplify(anchor=0),
+                         il.Always(self.p, P.closedopen(1, 6)))
+        # A disconnected outer window groups as a conjunction, never one parameter.
+        gap = P.closedopen(0, 2) | P.closed(4, 9)
+        grouped = cover.simplify(anchor=0, universe=gap)
+        self.assertEqual(grouped, il.Always(self.p, P.closedopen(1, 3))
+                         & il.Always(self.p, P.closedopen(4, 6)))
+        unbounded = il.Always(il.Always(self.p, 1), P.closedopen(1, P.inf))
+        self.assertEqual(unbounded.simplify(anchor=0), il.Always(self.p, P.closedopen(1, P.inf)))
+        trace = il.Trace(FULL, {'p': P.closedopen(1, 4)})
+        self.assert_observations(cover, trace, [0], anchor=0)
+        self.assert_observations(cover, trace, [3], anchor=3)
+
+    def test_blocked_eventually_loses_the_denied_region(self):
+        blocked = il.Always(~self.p, P.closedopen(2, 3)) & il.Eventually(self.p, P.closedopen(1, 6))
+        pruned = (il.Eventually(self.p, P.closedopen(1, 2)) | il.Eventually(self.p, P.closedopen(3, 6))) \
+            & il.Always(~self.p, P.closedopen(2, 3))
+        self.assertEqual(blocked.simplify(anchor=0), pruned)
+        # Pruning needs no anchor: a witness after the anchor is outside R anyway.
+        self.assertEqual(blocked.simplify(), pruned)
+        # Incompatible signal assignments block just as complementary bodies do.
+        j = il.Signal('j')
+        signals = il.Always(j.equals(1), P.closedopen(2, 3)) & il.Eventually(j.equals(2), P.closedopen(1, 3))
+        self.assertEqual(signals.simplify(anchor=0),
+                         il.Eventually(j.equals(2), P.closedopen(1, 2))
+                         & il.Always(j.equals(1), P.closedopen(2, 3)))
+        # A fully denied witness region is false, not an unreduced conjunction.
+        self.assertEqual((il.Always(~self.p, P.closed(0, 9))
+                          & il.Eventually(self.p, P.closedopen(1, 6))).simplify(anchor=0),
+                         il.Boolean(False))
+        # Compatible bodies and relative parameters are left alone.
+        compatible = il.Eventually(self.p, P.closedopen(1, 6)) & il.Always(self.q, P.closedopen(2, 3))
+        self.assertEqual(compatible.simplify(anchor=0), compatible)
+        relative = il.Eventually(self.p, P.closedopen(1, 6)) & il.Always(~self.p, 2)
+        self.assertEqual(relative.simplify(anchor=0), relative)
+        # Grouped start windows are pruned alternative by alternative.
+        grouped = (il.Eventually(self.p, P.closedopen(1, 2))
+                   | il.Eventually(self.p, P.closedopen(2, 3))
+                   | il.Eventually(self.p, P.closedopen(3, 4))) & il.Always(~self.p, P.closedopen(F(3, 2), 3))
+        self.assertEqual(grouped.simplify(anchor=0),
+                         (il.Eventually(self.p, P.closedopen(1, F(3, 2)))
+                          | il.Eventually(self.p, P.closedopen(3, 4)))
+                         & il.Always(~self.p, P.closedopen(F(3, 2), 3)))
+        # Negations, selections, and temporal operands are never entered.
+        for keep in (
+            ~il.Eventually(self.p, P.closedopen(1, 6)),
+            il.VacuousSelection(il.Eventually(self.p, P.closedopen(1, 6)), 2),
+            il.Always(il.Eventually(self.p, P.closedopen(1, 6)), P.closed(0, 9)),
+        ):
+            untouched = keep & il.Always(~self.p, P.closedopen(2, 3))
+            self.assertEqual(untouched.simplify(anchor=0), untouched)
+        trace = il.Trace(FULL, {'p': P.closedopen(1, 4), 'q': P.closed(0, 9)})
+        for formula in (blocked, grouped, compatible, relative):
+            self.assert_observations(formula, trace, [0], anchor=0)
+            self.assert_observations(formula, trace, [0, 1, 4], universe=FULL)
 
 if __name__ == '__main__':
     unittest.main()
