@@ -5,7 +5,7 @@ Open work on [PROTOCOL.md](PROTOCOL.md), split into two sections. Section A
 [`notebooks/protocol.ipynb`](../notebooks/protocol.ipynb) as the reference
 implementation and asking what the specification fails to say; each names the
 location in PROTOCOL.md and what the notebook does instead. Section B
-(B.1-B.4) is a design direction rather than a gap: giving the contracts'
+(B.1-B.7) is a design direction rather than a gap: giving the contracts'
 assumption slot something to do.
 
 Fix order: A.1 and A.2 are the places a careful reader cannot proceed without
@@ -47,7 +47,7 @@ The specification cannot be implemented as written until these are closed.
   ([L130-131](PROTOCOL.md#L130-L131), "some admissible trajectory satisfies
   $(\xi,0)\models G$"): there is no operational definition to compute with,
   and nothing says what it means once the assumption is nontrivial, where
-  compatibility of $A$ is also at stake (B.3 reaches this from the other
+  compatibility of $A$ is also at stake (B.5 and B.6 reach this from the other
   side). Saturation is not mentioned at all, although the operations below are
   only correct on saturated contracts. The notebook stores
   $\langle A\mid G\rangle$ as $\langle A\mid G\lor\neg A\rangle$, decides
@@ -215,6 +215,10 @@ no load. From the charger's side the environment is the vehicle, so a useful
 assumption has to be about vehicle behaviour, has to vary over time, and has to
 be revisable mid-session so that a violation is a well-defined event.
 
+Fix order: B.1 fixes the model, and B.3 and B.5 have to land with it — the
+first conditional contract makes §4's and §6's consistency checks unsound, not
+merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
+
 - [ ] **B.1. Add a `plugged` presence signal and make offers conditional on
   it.** Presence is a second signal, controlled by the vehicle and
   structurally identical to `job`:
@@ -292,27 +296,114 @@ be revisable mid-session so that a violation is a well-defined event.
     leave environment signals alone.
   - Conditional merging and separation ([A.1](#definitional-holes)) stop
     being a documentation gap and become load-bearing on the first run.
-  - `consistent` only asks about the guarantee. Non-trivial assumptions also
-    need compatibility — is the assumption satisfiable — and the protocol has to
-    say what an incompatible request means.
+  - `consistent` is not the thing to extend: it is the definition of its own
+    question ([PROTOCOL.md L204-232](PROTOCOL.md#L204-L232)), and what is
+    missing is its two siblings. Add one `satisfiable` procedure — clause 1 of
+    the realization lemma — and give it three entry points:
 
-- [ ] **B.4. Decide on order atoms, separately from presence.** Disequality is
-  already available as $\neg(\tau_1=\tau_2)$ and costs nothing. Order
-  ($\le$, $<$) does not exist. Presence needs neither; an energy or
-  state-of-charge assumption needs order, which is why the two should not be
-  bundled.
+    ```python
+    def satisfiable(formula): return normalize(formula).simplify(anchor=0) != il.Boolean(False)
+    def consistent(c):        return satisfiable(c.guarantee)
+    def compatible(c):        return satisfiable(c.assumption)
+    def realizable(c):        return satisfiable(c.assumption & c.guarantee)
+    ```
 
-  If order is added, the minimal *closed* addition is **both $\le$ and $<$**,
-  because NNF requires negation to land on atoms:
-  $\neg(a\le b)\equiv b<a$ and $\neg(a<b)\equiv b\le a$, so adding only $\le$
-  leaves `to_nnf` stuck. Cost: two atom forms, two local-satisfaction clauses
-  and two dualities in LOGIC.md; `LessEqual`/`Less` nodes, parser, formatter,
-  NNF dualities and literal folding in the implementation — all mechanical. The
-  real work is `_combine`, whose signal-assignment check currently maps
-  signal to value and flags disagreement, and which would have to become a small
-  integer-bounds domain to catch $x\le2\land5\le x\Rightarrow\bot$.
+    Note that `realizable(c) == consistent(c.require_assumption())`, which is
+    what [L229-232](PROTOCOL.md#L229-L232) already says about
+    $\bar C^{\mathrm{post}}$: promotion is the query device, and [A.4](#claims-presented-as-immediate)
+    carries its soundness argument. Promotion stays a device — an offer that
+    *demands* presence is a different commercial object from one that assumes
+    it. Which site asks which query is B.5; what an unsatisfiable assumption
+    means for a request is B.6.
 
-  Order alone does not buy the energy story. Relating a remaining-need signal to
-  accumulated allocation is dynamics, which is the reachability backend
-  ([BACKEND.md](BACKEND.md)), not the atom grammar. Order is necessary and
-  nowhere near sufficient.
+  - Generalize the realization lemma's fragment from one signal to several
+    ([PROTOCOL.md L262-276](PROTOCOL.md#L262-L276)). Region atoms become
+    $\square_S(\sigma=k)$ for a signal $\sigma$, and clause 1's contradiction
+    table becomes per signal,
+
+    $$
+    \square_S(\sigma=k)\land\square_{S'}(\sigma=k')\equiv\bot
+    \iff k\ne k'\ \text{and}\ S\cap S'\ne\varnothing,
+    $$
+
+    with no contradiction across distinct signals. The interval arithmetic
+    underneath is unchanged; `project` carries two independent projections,
+    $p$ for $\textit{job}=k$ and $q$ for $\textit{plugged}=k$, instead of
+    collapsing both onto $p$.
+
+
+
+- [ ] **B.5. Ask realizability, not consistency, at the merge sites.** Once
+  B.1 gives $C_i^{\mathrm{acc}}$ a presence assumption, $C^{\mathrm{cmt}}$ is a merge of
+  conditional contracts and its assumption is the conjunction of all presence
+  windows. `plugged` is one signal, so two commitments with overlapping windows
+  and different vehicles give
+
+  $$
+  A_1\land A_2
+  =\square_{J_1}(\textit{plugged}=k_1)\land\square_{J_2}(\textit{plugged}=k_2)
+  \equiv\bot,
+  $$
+
+  and merging ([§Inputs L181-196](PROTOCOL.md#L181-L196)) returns the guarantee
+  $(G_1\land G_2)\lor\neg(A_1\land A_2)=\top$. So §6's check (iv) —
+  "$C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}}$ is consistent",
+  [L849](PROTOCOL.md#L849) — **passes, and stores the double booking**,
+  precisely because the two reservations conflict. §4's per-start check
+  ([L682](PROTOCOL.md#L682)) fails the same way. This is not a sharpening of an
+  already-correct test: consistency at these two sites becomes unsound on the
+  first conditional contract, which is why B.5 has to land with B.1.
+
+  The fix is to ask `realizable` at both sites; it returns false here because
+  $A\land G$ is $\bot$. PROTOCOL.md already names the disease
+  ([L224-228](PROTOCOL.md#L224-L228), "a contract with an unsatisfiable
+  assumption is consistent and useless"); what is missing is that §4 and §6 are
+  where it bites. The realization lemma's caller table
+  ([L344-349](PROTOCOL.md#L344-L349)) then lists three queries over one
+  procedure rather than one query four times, and §2 keeps `consistent`, since
+  $\bar C^{\mathrm{cand}}$ stays unconditional.
+
+  Worth stating as the payoff, since it is the first place the assumption slot
+  does work: the non-overlap check now appears twice, once on `job` (may the
+  charger allocate?) and once on `plugged` (can the vehicles all be there?),
+  and both are the same lemma clause over different signals.
+
+- [ ] **B.6. Give the intake an incompatible-request outcome, and say who moves
+  on each failure.** Compatibility depends only on the request, never on the
+  commitments, so it cannot change while scheduling proceeds: it is input
+  validation, not a scheduling result. Check it once, before Step 1, and give it
+  its own terminal outcome, distinct from "no feasible offer" — the
+  assumption-side twin of the $I=\varnothing$ rule already at
+  [§Inputs L246](PROTOCOL.md#L246):
+
+  > A request whose assumption is unsatisfiable is **malformed**: it promises a
+  > presence pattern no admissible trajectory realizes — for instance B.2's
+  > strength-3 bounds with $[t_0,t_1)\cup[t_2,\infty)$ leaving no $d$-window in
+  > $I$. No allocation repairs it, so negotiation terminates without agreement
+  > and the defect is reported to the vehicle.
+
+  This also gives [§5](PROTOCOL.md#L382-L399) and the "Other outcomes" note at
+  [L1070-1075](PROTOCOL.md#L1070-L1075) a three-way outcome with an attribution
+  rule, which is what the assume-guarantee framing is for outside §2:
+
+  | Failing query | What it means | Who moves |
+  | --- | --- | --- |
+  | request not `compatible` | the request contradicts itself | vehicle: fix the request |
+  | merge not `compatible` | the connector is already promised to another vehicle | scheduler: no offer at this $J_s$ |
+  | merge `compatible`, not `realizable` | no free window | charger: counteroffer, or vehicle weakens to B.2 strength 2 |
+
+  The rows are distinguished by exactly the calls B.3 adds: `compatible` on the
+  request at intake, then `compatible` and `realizable` on the merge. The middle
+  row is the one that needs a name in §5 — it is a refusal the vehicle cannot
+  price its way out of, unlike the third.
+
+- [ ] **B.7. Fix the connector multiplicity that B.1 presumes.** B.5's
+  assumption-side conflict check works because `plugged` is a single signal
+  whose values are mutually exclusive — that is, because the station has one
+  connector. A multi-connector station indexes presence per connector
+  ($\textit{plugged}_c$), mutual exclusion holds per signal, and the check
+  becomes per-connector while `job` either stays station-wide or splits with it.
+  Nothing in PROTOCOL.md states which station is being modelled. Say so in
+  §Inputs before B.1's signal is introduced; one connector is the reading the
+  rest of the document already assumes, since a single commitment set $K$ with
+  mutually exclusive job values admits no overlapping reservations at all.
