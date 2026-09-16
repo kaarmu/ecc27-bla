@@ -219,7 +219,26 @@ Fix order: B.1 fixes the model, and B.3 and B.5 have to land with it — the
 first conditional contract makes §4's and §6's consistency checks unsound, not
 merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
 
-- [ ] **B.1. Add a `plugged` presence signal and make offers conditional on
+**Status: closed** (B.4 excepted — see the note below). The bundle landed
+together: `plugged` and the one-connector reading are in
+[PROTOCOL.md](PROTOCOL.md) §Inputs, offers and stored agreements are
+conditional (§4, §6), the realization lemma is generalized to per-signal
+contradiction with three queries over one `satisfiable` procedure, the
+strengthening derivation is §2/*Where strengthening comes from*, and intake
+compatibility with its attribution table is §Inputs and §5. The reference
+implementation in [`notebooks/protocol.ipynb`](../notebooks/protocol.ipynb)
+runs end to end and asserts the B.5 failure it is meant to prevent.
+
+**B.4 has no body in this file.** The fix-order note above still lists it, but
+the item itself is absent — it appears to have been dropped in an edit. The
+order-atom decision it asked for was written up in
+[LOGIC.md](LOGIC.md)/*Deferred: order atoms* (defer $\le$ and $<$; if added,
+both are needed for NNF closure, and the real cost is the simplifier's
+signal-assignment check becoming an integer-bounds domain). That section stands
+on its own, but it is unchecked work — restore B.4 here or delete the reference
+to it.
+
+- [x] **B.1. Add a `plugged` presence signal and make offers conditional on
   it.** Presence is a second signal, controlled by the vehicle and
   structurally identical to `job`:
 
@@ -253,7 +272,7 @@ merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
   proposition per job (`plugged_k`) is a third option that works for a fixed
   finite job set but scales badly. Recommend the signal.
 
-- [ ] **B.2. Derive conjunctive strengthening from an existential presence
+- [x] **B.2. Derive conjunctive strengthening from an existential presence
   assumption.** Presence admits several strengths, weakest commitment last:
 
   1. **Committed window (Preferred)** — $\square_{J_s}(\textit{plugged}=k)$, matching the
@@ -275,7 +294,7 @@ merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
   assume-guarantee framing is for.
 
 
-- [ ] **B.3. Update the plumbing that assumes $\top$ assumptions.** No change
+- [x] **B.3. Update the plumbing that assumes $\top$ assumptions.** No change
   to [LOGIC.md](LOGIC.md) is required — the grammar already allows several
   signals ($\tau::=n\mid\textit{job}$ with $\textit{job}:X\to\mathbb N_0$, and
   the charging-station example already uses
@@ -331,9 +350,15 @@ merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
     $p$ for $\textit{job}=k$ and $q$ for $\textit{plugged}=k$, instead of
     collapsing both onto $p$.
 
+  **Verified while implementing.** All four lines of the block above reproduce
+  exactly against the package, and `_combine`'s signal-assignment check is as
+  described. The `satisfiable`/`consistent`/`compatible`/`realizable` shape was
+  adopted verbatim, and the two-projection fix ($p$ for `job`, $q$ for
+  `plugged`) is exercised by a notebook assertion.
 
 
-- [ ] **B.5. Ask realizability, not consistency, at the merge sites.** Once
+
+- [x] **B.5. Ask realizability, not consistency, at the merge sites.** Once
   B.1 gives $C_i^{\mathrm{acc}}$ a presence assumption, $C^{\mathrm{cmt}}$ is a merge of
   conditional contracts and its assumption is the conjunction of all presence
   windows. `plugged` is one signal, so two commitments with overlapping windows
@@ -368,7 +393,12 @@ merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
   charger allocate?) and once on `plugged` (can the vehicles all be there?),
   and both are the same lemma clause over different signals.
 
-- [ ] **B.6. Give the intake an incompatible-request outcome, and say who moves
+  **Confirmed against the package.** Two overlapping agreements for different
+  vehicles give `compatible=False`, `consistent=True`, `realizable=False` — so
+  consistency does store the double booking, exactly as described. The notebook
+  now asserts all three.
+
+- [x] **B.6. Give the intake an incompatible-request outcome, and say who moves
   on each failure.** Compatibility depends only on the request, never on the
   commitments, so it cannot change while scheduling proceeds: it is input
   validation, not a scheduling result. Check it once, before Step 1, and give it
@@ -397,7 +427,7 @@ merely imprecise. B.2, B.4, B.6 and B.7 are independent of that bundle.
   row is the one that needs a name in §5 — it is a refusal the vehicle cannot
   price its way out of, unlike the third.
 
-- [ ] **B.7. Fix the connector multiplicity that B.1 presumes.** B.5's
+- [x] **B.7. Fix the connector multiplicity that B.1 presumes.** B.5's
   assumption-side conflict check works because `plugged` is a single signal
   whose values are mutually exclusive — that is, because the station has one
   connector. A multi-connector station indexes presence per connector

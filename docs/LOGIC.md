@@ -51,6 +51,49 @@ $$
 Inequality is the shorthand
 $\tau_1\neq\tau_2:=\neg(\tau_1=\tau_2)$.
 
+The grammar admits any number of signal names; $\textit{job}$ is written above
+because it is the running example. [PROTOCOL.md](PROTOCOL.md) uses two,
+$\textit{job}$ and $\textit{plugged}$, and needs no extension to do so.
+
+### Deferred: order atoms
+
+Equality and disequality are the only relations on numeric terms. Order
+($\le$, $<$) is **deliberately absent**, and this note records why, so that the
+omission is not read as an oversight.
+
+Nothing in the current protocol needs it. Presence, the one environment
+assumption [PROTOCOL.md](PROTOCOL.md) actually uses, is a statement about which
+vehicle is connected, which is equality. The motivating case for order is an
+energy or state-of-charge assumption — "the battery is below $80\%$" — and
+order alone does not buy it: relating a remaining-need signal to accumulated
+allocation is *dynamics*, which lives in the reachability backend
+([BACKEND.md](BACKEND.md)), not in the atom grammar. Order is necessary for
+that story and nowhere near sufficient, so adding it now would enlarge the
+language without enabling anything.
+
+Should it be added later, two things are worth knowing in advance.
+
+**The minimal closed addition is both $\le$ and $<$, not one of them.**
+Negation-normal form requires negation to land on atoms, and the duals are
+
+$$
+\neg(\tau_1\le\tau_2)\equiv\tau_2<\tau_1,
+\qquad
+\neg(\tau_1<\tau_2)\equiv\tau_2\le\tau_1,
+$$
+
+so each operator's dual is the *other* one. Adding only $\le$ leaves
+negation-normal form unable to push a negation through it.
+
+**The cost is concentrated in one place.** Two atom forms, two
+local-satisfaction clauses and two dualities here; node types, parser,
+formatter, NNF dualities and literal folding in the implementation — all
+mechanical. The real work is the simplifier's conjunction handling, which today
+maps each signal to a single value and reports a contradiction when two
+assignments disagree. That check would have to become a small integer-bounds
+domain, so that $x\le2\land5\le x$ still reduces to $\bot$. Until a dynamics
+model needs order, that complexity buys nothing.
+
 ### Temporal parameters
 
 Every temporal operator accepts the same kinds of parameter:

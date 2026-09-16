@@ -25,7 +25,9 @@ among the resulting feasible intervals; price rejection leaves this set fixed.
 
 ```mermaid
 flowchart TD
-    Input["Request and current reservations"] --> Starts{"Any admissible starts?"}
+    Input["Request and current reservations"] --> Intake{"Request compatible?"}
+    Intake -- No --> Malformed["End: malformed request"]
+    Intake -- Yes --> Starts{"Any admissible starts?"}
     Starts -- No --> Stop["End without agreement"]
     Starts -- Yes --> Project["1. Project reservations to the requested job"]
     Project --> Strengthen["2. Conjunctively strengthen request and test consistency"]
@@ -79,8 +81,21 @@ sequenceDiagram
 
 ## Inputs and notation
 
+**One connector.** This document models a station with a **single connector**:
+one physical point at which one vehicle at a time can be plugged in and served.
+That is the reading the rest of the document already assumes — a single
+commitment set $K$ whose job values are mutually exclusive admits no
+overlapping reservations at all — but it is stated here because both signals
+below depend on it. A multi-connector station indexes presence per connector,
+$\textit{plugged}_c$, so that mutual exclusion holds per connector rather than
+per station; $\textit{job}$ then either stays station-wide or splits with it,
+and the conflict checks of §4 and §6 become per-connector. Nothing else in the
+development changes, but the single-connector reading is load-bearing wherever
+mutual exclusion is invoked, and is assumed throughout.
+
 Consider one charging point with signal $\textit{job}:X\to\mathbb N_0$;
-$0$ denotes an unallocated point. EV $i$ requests a new job $k>0$, duration
+$0$ denotes an unallocated point. The point carries a second signal,
+$\textit{plugged}$, introduced below. EV $i$ requests a new job $k>0$, duration
 $d>0$, and a start set $I$ of admissible start times — generated below by an
 integer start horizon $h\in\mathbb N_0$ in the simplest
 case. Existing reservations are consistent and
@@ -145,6 +160,95 @@ of $S$, whereas $\square_S\varphi$ means that it holds throughout every
 component. Each $S_\ell$ is an absolute interval; a permitted start time $s$
 is represented by the singleton interval $[s,s]$. Empty unions give $\bot$
 and $\top$, respectively.
+
+
+### Presence: the vehicle's signal
+
+The charging point carries a second signal, controlled by the vehicle rather
+than by the charger:
+
+$$
+\boxed{
+\textit{plugged}:X\to\mathbb N_0,
+\qquad
+\textit{plugged}(t)=0\ \text{: nothing connected},
+\qquad
+\textit{plugged}(t)=k\ \text{: vehicle }k\text{ connected}.
+}
+$$
+
+Keeping presence separate from allocation is the whole point of the pair:
+$\textit{job}$ is the charger's decision and $\textit{plugged}$ is the
+vehicle's. Neither party controls both. Energy flows only where the two agree,
+so define
+
+$$
+\boxed{\textit{charging}_k:=(\textit{job}=k)\land(\textit{plugged}=k).}
+$$
+
+**Signal, not proposition.** A bare proposition $\textit{plugged}$ cannot say
+*which* vehicle is connected, so a charger would owe its guarantee whenever any
+car occupied the point — including the wrong one. A signal keeps the identity
+and inherits the mutual exclusion the simplifier already enforces on signal
+assignments, so $\square_S(\textit{plugged}=2)\land\square_S(\textit{plugged}=3)$
+reduces to $\bot$ without a new rule. One proposition per job
+($\textit{plugged}_k$) would also work for a fixed finite job set, but it makes
+the vocabulary grow with the fleet. The signal is the right choice, and it
+costs nothing: LOGIC.md's grammar already admits several signals.
+
+**What presence is for.** Without it every contract in this protocol is
+$\langle\top\mid G\rangle$, and the assume-guarantee machinery carries no load —
+the one nontrivial assumption that ever appears is the residual $\bar A^{ms}$
+of §3, an artifact of separation rather than a statement about anyone's
+environment. From the charger's side the environment *is* the vehicle, so a
+useful assumption has to be about vehicle behaviour, has to vary over time, and
+has to be revisable mid-session so that a violation is a well-defined event.
+Presence is the smallest signal with all three properties.
+
+**Commitments become conditional.** An accepted agreement is stored as the
+conditional contract it is,
+
+$$
+C_i^{\mathrm{acc}}
+:=\left\langle\ \square_{J^*}(\textit{plugged}=k)\ \middle|\ \square_{J^*}(\textit{job}=k)\right\rangle,
+\qquad
+C^{\mathrm{cmt}}\leftarrow C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}},
+$$
+
+so $C^{\mathrm{cmt}}$ is a merge of conditional contracts and its assumption is
+the conjunction of every stored presence window. Because $\textit{plugged}$ is
+one signal with mutually exclusive values, that conjunction records a second,
+independent conflict condition: two commitments to *different* vehicles over
+overlapping windows have $A_1\land A_2\equiv\bot$. This is the first place the
+assumption slot does work, and §4 and §6 depend on it.
+
+**Scheduling still sees an unconditional abstraction.** Step 1 projects the
+commitments to *unavailability*, and that abstraction is deliberately
+unconditional: a stored reservation blocks a later request whether or not its
+vehicle turns up, because at scheduling time the charger cannot know who will
+arrive, and availability must be decidable from the records alone. So Step 1
+keeps only the $\textit{job}$ side,
+
+$$
+\bar C^{\mathrm{cmt}}:=\left\langle\top\mid\square_R\neg p\right\rangle,
+$$
+
+which is a guarantee-weakening of the stored record — a refinement step in the
+direction of abstraction, of the same kind as §3's passage to
+$\bar C^{\mathrm{avail}}$. Steps 1–3 are therefore unchanged by presence, and
+$\bar C^{\mathrm{cand}}$ in §2 stays unconditional. Conditionality is not lost;
+it is simply not what the availability question is about. Steps 4 and 6 work
+against the *stored* commitments, in the original vocabulary, where it is
+retained.
+
+**Guarantees mention only the charger's signal.** In $C^{\mathrm{acc}}_i$ the
+assumption constrains $\textit{plugged}$ and the guarantee constrains
+$\textit{job}$, and neither mentions the other party's signal. This is not a
+stylistic preference: a component may only promise what it controls. Charging
+itself is the conjunction, delivered jointly — under the assumption,
+$\square_{J^*}(\textit{plugged}=k)\land\square_{J^*}(\textit{job}=k)\equiv\square_{J^*}\textit{charging}_k$,
+so the pair delivers energy without
+either side promising the other's behaviour.
 
 ### Contracts
 
@@ -245,6 +349,26 @@ $$
 
 If $I=\varnothing$, the request is trivially infeasible and negotiations can be terminated without agreement.
 
+**Intake: a malformed request.** The assumption side has a twin of that rule. A
+request whose assumption is unsatisfiable is **malformed**: it promises a
+presence pattern that no admissible trajectory realizes — for instance the
+arrival and departure bounds of §2's strength 3 with
+$[t_0,t_1)\cup[t_2,\infty)$ leaving no full $d$-window inside $I$. No allocation
+repairs such a request, so it is not a scheduling result at all:
+
+$$
+\boxed{
+\text{if }\mathrm{sat}(A^{\mathrm{req}})\text{ fails, terminate without agreement and report the defect to the vehicle.}
+}
+$$
+
+Check this **once, before Step 1**. Compatibility depends only on the request,
+never on the commitments, so it cannot change while scheduling proceeds — it is
+input validation, not a scheduling outcome, and it deserves a terminal outcome
+of its own rather than being reported as "no feasible interval". A request with
+a trivial assumption, which is the default of §4, passes this check
+automatically.
+
 **Note.** The request contract could be redefined under the interpretation "Find a request contract 'charge for $d$ duration' within $I$ interval." Under that interpretation, one could imagine new syntax and semantics for contracts, such as $\exists_I\left\langle\top\;\middle|\;\square_d(\textit{job}=k)\right\rangle.$
 
 ### The reservation fragment and its realization
@@ -263,17 +387,39 @@ to build, they do not compute a contract's result.)
 of **region atoms**
 
 $$
-\square_S(\textit{job}=k),
+\square_S(\sigma=k),
 \qquad
-\lozenge_S(\textit{job}=k),
+\lozenge_S(\sigma=k),
 $$
 
-and their projections $\square_Sp$, $\square_S\neg p$, $\lozenge_Sp$,
-$\lozenge_S\neg p$, where each region $S\subseteq\mathbb I$ is a finite union of
-intervals spelled by the grouping convention above. Call this the
-**reservation fragment**. It is closed under $\land$, $\lor$ and negation:
-negation-normal form only exchanges the two operators, since
-$\neg\square_S\varphi\equiv\lozenge_S\neg\varphi$.
+over a signal $\sigma\in\{\textit{job},\textit{plugged}\}$ and a region
+$S\subseteq\mathbb I$ that is a finite union of intervals spelled by the
+grouping convention above, together with their projections
+$\square_Sp,\ \lozenge_Sp$ and $\square_Sq,\ \lozenge_Sq$ (and the negated
+forms). Call this the **reservation fragment**. It is closed under $\land$,
+$\lor$ and negation: negation-normal form only exchanges the two operators,
+since $\neg\square_S\varphi\equiv\lozenge_S\neg\varphi$.
+
+**Contradiction is per signal.** Two distinct signals may take any pair of
+values at any time, so no conjunction mixing them is contradictory on that
+account. Within one signal, mutual exclusion applies:
+
+$$
+\boxed{
+\square_S(\sigma=k)\land\square_{S'}(\sigma=k')\equiv\bot
+\quad\Longleftrightarrow\quad
+k\neq k'\ \text{ and }\ S\cap S'\neq\varnothing,
+}
+$$
+
+with no contradiction across distinct signals. The interval arithmetic
+underneath is exactly Section A's; only the bookkeeping is now indexed by
+signal. Every query below therefore **decomposes by signal**: a conjunction is
+satisfiable exactly when its $\textit{job}$ part and its $\textit{plugged}$
+part are separately satisfiable. That is what keeps presence from disturbing
+Section A's results — and, read the other way, it is what lets the *same*
+non-overlap check serve two different questions: on $\textit{job}$, may the
+charger allocate; on $\textit{plugged}$, can the vehicles all be there.
 
 **The fragment is read at a fixed anchor.** A region atom denotes
 $W_S(0)=S\cap[0,\infty)\cap\mathbb I=S$ *because* the anchor is $0$ and
@@ -331,7 +477,28 @@ $\mathbb I=[0,\infty)$, and let $G$ be normalized as above. Then:
    the requested job exactly on $E\setminus R$, which is what the second
    rewrite has already computed. The region is *read off* the normalized
    guarantee, not calculated beside it.
-3. **Containment.** Let $J=E\setminus R$ be the witness region of clause 2 and
+3. **Three queries, one procedure.** Clause 1 decides satisfiability of a
+   fragment formula. The contract-level questions of §Inputs are that one
+   procedure applied to three different formulas:
+
+   $$
+   \text{consistent}(C)=\mathrm{sat}(G),
+   \qquad
+   \text{compatible}(C)=\mathrm{sat}(A),
+   \qquad
+   \text{realizable}(C)=\mathrm{sat}(A\land G).
+   $$
+
+   Note $\text{realizable}(C)=\text{consistent}(C^{\mathrm{post}})$ for the
+   promotion of §3: promotion is the query device, and §3 carries its soundness
+   argument. Promotion nonetheless stays a device rather than a rewrite of the
+   offer — a contract that *demands* presence is a different commercial object
+   from one that assumes it. **Consistency is not a substitute for
+   realizability**: the saturated guarantee $G\lor\neg A$ is satisfied by every
+   trajectory violating $A$, so a conditional contract is consistent whatever
+   its guarantee says, and an *incompatible* one is consistent precisely
+   because it is broken. Which site asks which query is settled in §4 and §6.
+4. **Containment.** Let $J=E\setminus R$ be the witness region of clause 2 and
    let $J'=[s,s+d)$ with $s\in I$, so that $J'\subseteq E$ holds by
    construction. Then $J'\subseteq J$ reduces to $J'\cap R=\varnothing$, which
    is clause 1 applied to
@@ -341,12 +508,16 @@ $\mathbb I=[0,\infty)$, and let $G$ be normalized as above. Then:
 The protocol's four uses of the formula layer are the four applications of this
 lemma:
 
-| Site | Query | Lemma clause |
-| --- | --- | --- |
-| §2 | is $\bar C^{\mathrm{cand}}$ consistent? | 1 |
-| §3 | which region does $\bar C^{\mathrm{post}}$ still permit? | 2 |
-| §4 | does $J_s$ fit, and is it consistent with the commitments? | 3, then 1 |
-| §6 | is the accepted contract still consistent with current commitments? | 1 |
+| Site | Query | Contract-level question | Lemma clause |
+| --- | --- | --- | --- |
+| intake | $\mathrm{sat}(A^{\mathrm{req}})$ | is the request compatible? | 1 |
+| §2 | $\mathrm{sat}(\bar G^{\mathrm{cand}})$ | is $\bar C^{\mathrm{cand}}$ consistent? | 1 |
+| §3 | witness region of $\bar C^{\mathrm{post}}$ | what does the repair still permit? | 2 |
+| §4 | $\mathrm{sat}(A\land G)$ of the merge | is this offer realizable? | 4, then 3 |
+| §6 | $\mathrm{sat}(A\land G)$ of the merge | is the agreement still realizable? | 3 |
+
+$\bar C^{\mathrm{cand}}$ is unconditional, so §2 keeps consistency; everything
+downstream of an offer is conditional and must ask realizability.
 
 §4 and §6 are callers of the same query as §2, not new checks. An
 implementation should share one procedure across all four; where the reference
@@ -377,21 +548,38 @@ K:=\bigwedge_{\ell=1}^m\square_{R_\ell}(\textit{job}=k_\ell),
 $$
 
 where $R_\ell$ is the reserved interval for commitment $\ell$ with job id $k_\ell$. This representation is chosen so that a later request can project the
-reservations to unavailability. Let $p$ be the projected proposition meaning
-that the point is allocated to the current job $k$. On the positive allocation
-atoms used in stored reservations and requests, define the syntactic operation
+reservations to unavailability. Let $p$ mean that the point is allocated to the
+current job $k$, and $q$ that vehicle $k$ is connected. Projection is indexed by
+the signal it abstracts, and carries the two signals to two **independent**
+propositions rather than collapsing both onto $p$:
 
 $$
+\boxed{
 \pi_k(\textit{job}=n):=
 \begin{cases}
 p,&n=k,\\
-\neg p,&n\neq k.
+\neg p,&n\neq k,
 \end{cases}
+\qquad
+\pi_k(\textit{plugged}=n):=
+\begin{cases}
+q,&n=k,\\
+\neg q,&n\neq k.
+\end{cases}
+}
 $$
+
+Collapsing them would be a category error, not an imprecision: it would turn
+the vehicle's promise to be present into a claim about the charger's own
+allocation, and the two-sorted contradiction table of the realization lemma
+would then report conflicts that do not exist.
 
 Apply this replacement inside their temporal conditions and Boolean
 combinations s.t. $K \overset{\pi_k}{\leadsto}\bar{K}$. Since $k$ is new, every stored reservation projects to
-$\square_{R_\ell}\neg p$. Thus
+$\square_{R_\ell}\neg p$ on the guarantee side. As §Inputs explains, the
+availability abstraction keeps only that side: the presence assumption of the
+stored commitments is dropped, because a reservation blocks a later request
+whether or not its vehicle arrives. Thus
 
 $$
 \boxed{
@@ -505,6 +693,65 @@ For example, with $h=4$, $d=1$, and $R=[1.5,3)$, the request envelope is
 $I\oplus[0,d)=[1,5)$.
 The candidate contract is inconsistent because of the conflict on $[1.5,3)$,
 although the original request can still use $J_3=[3,4)$.
+### Where strengthening comes from
+
+As presented above, conjunctive strengthening is a proof device: a temporary
+over-requirement whose only job is to expose conflicts, discarded in Step 3.
+That is the honest reading **when the vehicle commits to a window**. Under a
+weaker presence assumption it stops being a device and becomes the charger's
+actual obligation.
+
+**A ladder of presence assumptions.** Presence admits several strengths,
+weakest commitment last:
+
+| # | Assumption | What the vehicle promises |
+| --- | --- | --- |
+| 1 | $\square_{J_s}(\textit{plugged}=k)$ | present throughout one agreed window |
+| 2 | $\lozenge_I\square_d(\textit{plugged}=k)$ | present for *some* full $d$-window in $I$, unsaid which |
+| 3 | $\square_{[t_0,t_1)}(\textit{plugged}\neq k)$, $\square_{[t_2,\infty)}(\textit{plugged}\neq k)$ | arrival and departure bounds only |
+
+Strength 1 is the default used by §4 and the worked example. Strength 2 mirrors
+the request itself, and it is the interesting one.
+
+**Under strength 2 the charger must hold the whole envelope.** Take the request
+contract at strength 2, with the service guarantee written in terms of
+$\textit{charging}_k$ — energy, not allocation:
+
+$$
+C^{\mathrm{req}}_2
+:=\left\langle\ \lozenge_I\square_d(\textit{plugged}=k)
+\ \middle|\ \lozenge_I\square_d\,\textit{charging}_k\ \right\rangle .
+$$
+
+**Proposition.** Any allocation satisfying $C^{\mathrm{req}}_2$ without
+observing $\textit{plugged}$ satisfies $\square_{I\oplus[0,d)}(\textit{job}=k)$,
+which is exactly $\bar G^s$.
+
+*Proof.* Suppose $\textit{job}(t)\neq k$ for some $t\in I\oplus[0,d)$. Then
+$t\in J_{s'}$ for some $s'\in I$. Consider the trajectory whose presence is
+exactly $J_{s'}$: it satisfies the assumption. Charging can hold only where
+presence does, so $\textit{charging}_k\subseteq J_{s'}$, and the only candidate
+window contained in $J_{s'}$ is $J_{s'}$ itself. But $t\in J_{s'}$ has
+$\textit{job}(t)\neq k$, so $\square_d\textit{charging}_k$ fails at $s'$ too,
+and the guarantee fails on a trajectory satisfying the assumption. Hence no
+such $t$ exists. $\square$
+
+So the strengthening that §2 introduces as a temporary device is, under an
+existential presence assumption, the weakest allocation the charger can
+actually commit to. The vehicle refused to say which window it would use, and
+covering every candidate is the charger's honest response. Conjunctive
+strengthening becomes part of the model rather than a step in a proof.
+
+**Two caveats, stated plainly.** The proposition assumes the charger does *not*
+observe $\textit{plugged}$ and react — a contract here is a constraint on
+trajectories, not a strategy. A charger that can watch the point and allocate
+reactively does better, and specifying that needs a notion of strategy this
+document does not have. Second, the proposition is about what must be
+*allocated*, not what must be *paid for*: the charger holds
+$|I\oplus[0,d)|$ of time and sells $d$ of energy, so strength 2 is only
+economic if the flexibility is priced. That is the concrete sense in which the
+assumption slot becomes negotiable — see §5.
+
 
 ## 3. Repair availability
 
@@ -662,11 +909,23 @@ requirements. In the example, $J=[1,1.5)\cup[3,5)$.
 
 ## 4. Concretize feasible intervals
 
-For a concrete interval $J'$, use the original job vocabulary:
+For a concrete interval $J'$, use the original job vocabulary, and make the
+offer conditional on the vehicle being there to receive it:
 
 $$
-C_i^{J'}:=\left\langle\top\mid\square_{J'}(\textit{job}=k)\right\rangle.
+\boxed{
+C_i^{J'}:=\left\langle\ \square_{J'}(\textit{plugged}=k)
+\ \middle|\ \square_{J'}(\textit{job}=k)\ \right\rangle,
+\qquad
+\text{saturated as }
+\lozenge_{J'}(\textit{plugged}\neq k)\lor\square_{J'}(\textit{job}=k).
+}
 $$
+
+The saturated guarantee reads *either the vehicle was absent, or the point was
+allocated* — which is exactly the obligation a charger can honestly take on.
+This is strength 1 of the ladder in §2; the offer names a window, so the
+vehicle can commit to that window.
 
 For either outcome of the consistency test, the **feasible start region** is
 
@@ -678,8 +937,10 @@ F:=I\cap\left\{s:[s,s+d)\subseteq J\right\},
 }
 $$
 
-where $\operatorname{rep}$ is the representative rule below. Each retained
-$s$ must also make $C^{\mathrm{cmt}}\bullet C_i^{J_s}$ consistent.
+where $\operatorname{rep}$ is the representative rule below. Each retained $s$
+must also make $C^{\mathrm{cmt}}\bullet C_i^{J_s}$ **realizable** — not merely
+consistent. The distinction is not pedantic; it is the difference between a
+correct filter and one that accepts everything, and it is spelled out below.
 
 **Erosion and its endpoints.** The containment test $[s,s+d)\subseteq J$ erodes
 each component of $J$ by $d$. Because both the window and the component are
@@ -717,12 +978,49 @@ realization lemma imposes. A deployment wanting finer granularity may replace
 it — for instance by sampling each component on a grid — without touching any
 other step.
 
-**The consistency check is the same query as §2.** Containment $J_s\subseteq J$
-is clause 3 of the realization lemma, hence clause 1 applied to
+**The check is the same query as §2 — but it must be realizability.** Containment
+$J_s\subseteq J$ is clause 4 of the realization lemma, hence clause 1 applied to
 $\langle\top\mid\square_R\neg p\land\square_{J_s}p\rangle$. It is one instance
 of §2's query, not a second criterion that happens to agree with it, so this
-step needs no "exact for the reservation model" aside of its own. Each
-candidate is then checked against the *original* commitments in the job
+step needs no "exact for the reservation model" aside of its own.
+
+**Consistency is not merely imprecise here — it is unsound.** Both
+$C^{\mathrm{cmt}}$ and $C_i^{J_s}$ are now conditional, so their merge has
+assumption $A^{\mathrm{cmt}}\land\square_{J_s}(\textit{plugged}=k)$ and
+guarantee $(G^{\mathrm{cmt}}\land G_s)\lor\neg(A^{\mathrm{cmt}}\land\square_{J_s}(\textit{plugged}=k))$.
+Suppose $J_s$ overlaps a commitment to a *different* vehicle $k'$. Then the
+merged assumption contains
+$\square_{J'}(\textit{plugged}=k')\land\square_{J_s}(\textit{plugged}=k)$ with
+$J'\cap J_s\neq\varnothing$, which is $\bot$ by mutual exclusion — one
+connector holds one vehicle. The merged guarantee therefore contains
+$\neg\bot=\top$ and is satisfied outright:
+
+$$
+A\equiv\bot
+\quad\Longrightarrow\quad
+G=(G_1\land G_2)\lor\neg A\equiv\top
+\quad\Longrightarrow\quad
+\text{consistent}.
+$$
+
+So a consistency test **passes exactly the windows it should reject, and would
+store the double booking** — it passes *because* the two reservations conflict.
+Realizability removes the escape, since $A\land G\equiv\bot$ whenever
+$A\equiv\bot$.
+
+Because contradiction is per signal, the query then splits into the two questions that actually
+matter, both instances of the same lemma clause over different signals:
+
+$$
+\underbrace{K\land\square_{J_s}(\textit{job}=k)}_{\text{may the charger allocate?}}
+\qquad\text{and}\qquad
+\underbrace{A^{\mathrm{cmt}}\land\square_{J_s}(\textit{plugged}=k)}_{\text{can the vehicles all be there?}}
+$$
+
+The first is §2's query. The second is new, and it is the first place in the
+protocol where the assumption slot does work rather than being carried along.
+
+Each candidate is checked against the *original* commitments in the job
 vocabulary rather than the projection, since $\mathcal J$ is what gets stored.
 With additional constraints both checks fall back to satisfiability over
 admissible trajectories, exactly as the lemma's scope note says.
@@ -818,7 +1116,37 @@ Switch roles and advance to round $r+1$. Utility floors continue to apply even
 if targets fall below them: a proposer whose target has fallen below its floor
 produces an empty burst and the run terminates, rather than re-pricing its
 offers at the floor. Counteroffers may change both interval and
-price within $\mathcal J$. If the request or commitments change, recompute
+price within $\mathcal J$.
+
+**Three ways to fail, three parties who move.** Negotiation can end without
+agreement for reasons that are not interchangeable, and the queries of the
+realization lemma separate them exactly:
+
+| Failing query | What it means | Who moves |
+| --- | --- | --- |
+| request not compatible | the request contradicts itself | vehicle: fix the request (intake, §Inputs) |
+| merge not compatible | the connector is already promised to another vehicle | scheduler: no offer at this $J_s$ |
+| merge compatible, not realizable | no free window | charger: counteroffer, or vehicle weakens to §2 strength 2 |
+
+The rows are distinguished by exactly the three entry points of the one
+satisfiability procedure: compatibility of the request at intake, then
+compatibility and realizability of the merge at §4 and §6. The middle row is
+the one that needs a name during bargaining: it is a refusal the vehicle
+**cannot price its way out of**, because no price changes who is plugged in,
+unlike the third row, where a counteroffer or a weaker presence commitment may
+still find an agreement.
+
+**Assumption strength is the other axis.** Every offer above carries strength 1
+of §2's ladder, so the parties bargain over price alone. Because the strength
+of the presence assumption determines how much time the charger must hold —
+$d$ at strength 1 against the whole envelope $I\oplus[0,d)$ at strength 2 — it
+is a term of trade in its own right: a vehicle that will not commit to a window
+should expect to pay for the flexibility, and one that commits harder should
+pay less. An offer then becomes a triple (interval, assumption strength, price)
+and concession can run along either axis. This document specifies price
+negotiation only. Strength negotiation is named here, not specified: it needs a
+cost model for held-but-unsold time and a rule for comparing offers that differ
+on two axes, and neither follows from anything above. If the request or commitments change, recompute
 feasibility before continuing negotiation.
 
 ## 6. Validate and store the accepted agreement
@@ -830,11 +1158,16 @@ $$
 \begin{aligned}
 C_i^{\mathrm{acc}}
 &:=C_i^{J^*}
-=\left\langle\top\mid\square_{J^*}(\textit{job}=k)\right\rangle,\\
+=\left\langle\ \square_{J^*}(\textit{plugged}=k)\ \middle|\ \square_{J^*}(\textit{job}=k)\right\rangle,\\
 \mathcal R&\leftarrow\mathcal R\cup\{(k,J^*)\},\\
-C^{\mathrm{cmt}}&\leftarrow C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}}.
+C^{\mathrm{cmt}}&\leftarrow C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}} .
 \end{aligned}
 $$
+
+The agreement is stored conditional, as accepted. Step 1 takes the
+unconditional availability abstraction of it when a later request needs one; the
+presence assumption stays in $C^{\mathrm{cmt}}$ and is what check (iv) above
+tests against.
 
 **The revalidation predicate.** "Revalidate feasibility" is four checks, all
 against the current request $C^{\mathrm{req}}$ and current commitments
@@ -846,7 +1179,7 @@ $$
 &\text{(i) the job id is }k,
 &&\text{(ii) } J^*=[s^*,s^*+d) \text{ for } s^*:=\min J^*,\\
 &\text{(iii) } s^*\in I,
-&&\text{(iv) } C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}} \text{ is consistent.}
+&&\text{(iv) } C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}} \text{ is realizable.}
 \end{aligned}
 }
 $$
@@ -854,12 +1187,18 @@ $$
 Checks (i)–(iii) are refinement of $C^{\mathrm{req}}$ spelled out. The duration
 must be *exactly* $d$, not merely at least $d$: a longer window would refine
 the request's coverage but occupies time the vehicle did not buy and blocks
-later requests, and $\mathcal J$ never contains one. Check (iv) is the
-consistency query of §2 — clause 1 of the realization lemma — now asked against
-the commitments as they stand rather than as they stood when $\mathcal J$ was
-computed. It is the lemma's fourth caller, not a new kind of check, and under
-additional dynamics it inherits the lemma's scope note. If any check fails,
-restart scheduling from Step 1; do not insert.
+later requests, and $\mathcal J$ never contains one. Check (iv) is clause 3 of
+the realization lemma, which decomposes it into clause 1 on each signal — now
+asked against the commitments as they stand rather than as they stood when
+$\mathcal J$ was computed. It is a caller of the same procedure, not a new kind
+of check, and under additional dynamics it inherits the lemma's scope note.
+
+It **must** be realizability, for the reason §4 gives at length: with
+conditional commitments a consistency test passes precisely those agreements
+that conflict with an existing booking, because the conflict makes the merged
+assumption unsatisfiable and the saturated guarantee vacuously true. Asking
+consistency here does not merely admit a marginal case; it inverts the test.
+If any check fails, restart scheduling from Step 1; do not insert.
 
 **Atomicity.** Validation and insertion must observe one state. Scheduling
 reads the request, the commitments, and the model inputs; bargaining takes
@@ -884,6 +1223,31 @@ cause a restart, never a bad insert. Restarting returns to Step 1 with a fresh
 snapshot and recomputed alternatives — the `Valid -- No --> Input` edge of the
 flowchart. A price rejection is not a restart: it ends the run without
 agreement and leaves the reservations unchanged.
+
+**Assumption violation is an event, not a procedure.** Because the accepted
+agreement is conditional, "the inputs changed, restart scheduling" has a
+contractual reading for the one case that matters. If the vehicle is absent at
+some $t\in J^*$ — that is, $\textit{plugged}(t)\neq k$ — then
+$\square_{J^*}(\textit{plugged}=k)$ is false, the assumption of
+$C_i^{\mathrm{acc}}$ is violated, and the charger's guarantee is void from $t$
+onward. This is checkable against the trace rather than declared by policy, and
+it is what distinguishes a vehicle that failed to appear from a scheduling
+input that moved.
+
+The charger may then **reclaim the remainder**: replace the stored agreement by
+its truncation and return the tail to availability,
+
+$$
+C_i^{\mathrm{acc}}
+\ \longleftarrow\
+\left\langle\ \square_{J^*\cap[0,t)}(\textit{plugged}=k)\ \middle|\ \square_{J^*\cap[0,t)}(\textit{job}=k)\right\rangle,
+$$
+
+after which $J^*\cap[t,\infty)$ is free for later requests. Reclaiming is a
+policy choice — a charger may prefer to hold the slot and bill for it — but it
+is now a choice with a precise trigger, rather than an unexplained restart. Note
+what is *not* released: time already elapsed under a satisfied assumption stays
+allocated, and the price for it stays owed.
 
 Store $q^*$ alongside the accepted record. For a later request with a different
 job ID, this record projects to $\square_{J^*}\neg p$ and contributes $J^*$ to
@@ -972,8 +1336,29 @@ Check each allowed start against $J$ and the original commitment:
 
 Thus $\mathcal J=\{J_3=[3,4),J_4=[4,5)\}$. The short available component
 $[1,1.5)$ cannot accommodate a full window. Each surviving alternative has
-contract $C_i^{J_s}=\langle\top\mid\square_{J_s}(\textit{job}=2)\rangle$,
+contract
+
+$$
+C_i^{J_s}=\left\langle\ \square_{J_s}(\textit{plugged}=2)
+\ \middle|\ \square_{J_s}(\textit{job}=2)\right\rangle,
+$$
+
 which satisfies the original duration and start requirements.
+
+Realizability is what rejects $s\in\{1,2\}$, and the reason is worth seeing on
+this example. The stored commitment is itself conditional,
+$\langle\square_{[1.5,3)}(\textit{plugged}=1)\mid\square_{[1.5,3)}(\textit{job}=1)\rangle$.
+Merging it with the offer at $s=2$ gives the assumption
+
+$$
+\square_{[1.5,3)}(\textit{plugged}=1)\land\square_{[2,3)}(\textit{plugged}=2)
+\equiv\bot,
+$$
+
+since one connector cannot hold both vehicles on $[2,3)$. The saturated
+guarantee is then $\top$, so the merge is **consistent** — and a consistency
+test would have accepted $s=2$ and stored a double booking, precisely because
+it conflicts. It is not realizable, which is the answer wanted.
 
 ### 5. Choose economic inputs and negotiate
 
@@ -1047,9 +1432,11 @@ evaluator's threshold. Costs and values stay fixed throughout these rounds.
 
 The accepted pair is $(J^*,q^*)=([3,4),4)$. The revalidation predicate holds:
 the job id is $2$, the duration is exactly $1$, the start $3$ lies in
-$I=\{1,2,3,4\}$, and $[3,4)$ is disjoint from the commitment $[1.5,3)$, so the
-merge is consistent. Since the snapshot still matches the current inputs, the
-atomic block proceeds and stores
+$I=\{1,2,3,4\}$, and $[3,4)$ is disjoint from the commitment $[1.5,3)$ — so
+neither signal conflicts and the merge is **realizable**, on the $\textit{job}$
+side because the allocations do not overlap and on the $\textit{plugged}$ side
+because the two vehicles are never required at once. Since the snapshot still
+matches the current inputs, the atomic block proceeds and stores
 
 $$
 \begin{aligned}
@@ -1063,6 +1450,14 @@ $$
 
 Attach total price $4$ to the job-$2$ record and confirm the reservation.
 The EV obtains utility $8-4=4$ and the charger obtains utility $4-2=2$.
+
+**If the vehicle unplugs at $3.5$.** The accepted agreement is
+$C_i^{\mathrm{acc}}=\langle\square_{[3,4)}(\textit{plugged}=2)\mid\square_{[3,4)}(\textit{job}=2)\rangle$.
+On a trace with $\textit{plugged}=2$ only on $[3,3.5)$, the assumption is false
+while the guarantee still holds, so the saturated contract is satisfied and the
+charger has met its obligation. From $t=3.5$ the guarantee is void, and the
+charger may truncate the stored allocation to $\square_{[3,3.5)}(\textit{job}=2)$,
+returning $[3.5,4)$ to availability for the next request.
 For a later new job, both reservations project to unavailability, whose
 union is $[1.5,4)$. The strengthened envelope, repaired availability, and
 unaccepted offers remain temporary.
@@ -1070,6 +1465,9 @@ unaccepted offers remain temporary.
 **Other outcomes.** If the strengthened candidate is consistent, use the full
 envelope as $J$ and skip repair. Empty allowed starts, no feasible full
 windows, no admissible offers, or rejection at the deadline end without
-agreement and leave reservations unchanged. Changed requests or commitments
+agreement and leave reservations unchanged. An incompatible request ends the
+run before Step 1 and is reported as malformed rather than as infeasible: the
+vehicle must change the request, since no state of the charger would have
+admitted it. Changed requests or commitments
 require recomputing feasibility; failed final validation restarts scheduling
 before any accepted reservation is inserted.
