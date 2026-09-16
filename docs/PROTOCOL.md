@@ -81,7 +81,9 @@ sequenceDiagram
 
 Consider one charging point with signal $\textit{job}:X\to\mathbb N_0$;
 $0$ denotes an unallocated point. EV $i$ requests a new job $k>0$, duration
-$d>0$, and integer start horizon $h\in\mathbb N_0$. Existing reservations are consistent and
+$d>0$, and a start set $I$ of admissible start times — generated below by an
+integer start horizon $h\in\mathbb N_0$ in the simplest
+case. Existing reservations are consistent and
 belong to other job IDs. The scheduling model permits allocation wherever
 no reservation blocks it; additional physical constraints require the
 trajectory feasibility check described below.
@@ -89,18 +91,38 @@ trajectory feasibility check described below.
 Use the temporal syntax and satisfaction relation of [LOGIC.md](LOGIC.md):
 $\lozenge_\rho$ for eventually, $\square_\rho$ for always, and $d$ for the
 relative window $[0,d)$. Charging throughout a duration is a condition
-$\square_d\varphi$. Evaluate all contracts at anchor $0$, with represented
-time $\mathbb I$ containing $0$, the full request envelope, and all reservation
-intervals.
-
-The start-grid policy is, for example,
+$\square_d\varphi$. Evaluate all contracts at anchor $0$, with represented time
 
 $$
-\begin{aligned}
-I&:=\{1,2,\ldots,h\},\\
-J_s&:=[s,s+d),\qquad s\in I,\; d = 1.
-\end{aligned}
+\boxed{\mathbb I:=[0,\infty).}
 $$
+
+Pinning $\mathbb I$ is not bookkeeping. Every temporal parameter denotes
+$W_S(a)=S\cap[a,\infty)\cap\mathbb I$
+([LOGIC.md](LOGIC.md#temporal-windows)), so a finite or disconnected universe
+would truncate regions silently and change which rewrites are valid: with
+$\mathbb I$ excluding $[1.5,3)$, the conflicting candidate of §2 becomes
+consistent. Taking $\mathbb I=[0,\infty)$ and the anchor $0$ gives $W_S(0)=S$
+for every region below, so a region atom denotes exactly its own region. Every
+identity in this document is stated under that choice.
+
+**Admissible start sets.** A request's start set $I$ is any **bounded** finite
+union of half-open intervals and singletons, $I=\bigcup_{\ell=1}^{m}I_\ell$. A
+singleton $[s,s]$ is one discrete start; a continuous component denotes every
+start inside it. The integer start grid
+
+$$
+I:=\{1,2,\ldots,h\},
+\qquad
+J_s:=[s,s+d),\qquad s\in I,
+$$
+
+is the special case in which every component is a singleton, and is the policy
+used by the worked example ($d=1$). Boundedness is required rather than
+conventional: §4 must return a finite set of alternatives, and an unbounded
+component admits infinitely many pairwise separated starts. Continuous
+components are admissible because §4 selects finitely many representatives from
+them; nothing before §4 depends on $I$ being finite.
 
 The request envelope is the
 Minkowski sum $I\oplus[0,d)=\bigcup_{s\in I}J_s$.
@@ -124,11 +146,92 @@ component. Each $S_\ell$ is an absolute interval; a permitted start time $s$
 is represented by the singleton interval $[s,s]$. Empty unions give $\bot$
 and $\top$, respectively.
 
-Write $C=\langle A\mid G\rangle$ for an assume-guarantee contract,
-$\bullet$ for contract merging, and $\div$ for separation. These operate
-on contracts whose formulas use LOGIC.md. For unconditional contracts,
-merging conjoins guarantees. Consistency of $\langle\top\mid G\rangle$
-means that some admissible trajectory satisfies $(\xi,0)\models G$.
+### Contracts
+
+Write $C=\langle A\mid G\rangle$ for an assume-guarantee contract, with $A$ and
+$G$ formulas of LOGIC.md read at anchor $0$. The contract obliges the component
+to deliver $G$ on every trajectory whose environment delivers $A$, and says
+nothing when $A$ fails. Write $\bullet$ for merging and $\div$ for separation.
+
+**Saturation.** Two contracts differing only where their assumption fails
+impose the same obligation. Every contract here is therefore stored
+**saturated**:
+
+$$
+\boxed{\langle A\mid G\rangle\ \text{is stored as}\ \langle A\mid G\lor\neg A\rangle.}
+$$
+
+Saturation is idempotent and changes no obligation. It is not optional: the
+operations below read $G$ directly, so an unsaturated guarantee would let the
+comparison of two contracts turn on trajectories neither one constrains. An
+unconditional contract $\langle\top\mid G\rangle$ is already saturated, which
+is why §1 and §2 never mention saturation.
+
+**Refinement.** $C_1\preceq C_2$ ("$C_1$ refines $C_2$") when $C_1$ accepts at
+least as many environments and promises at least as much:
+
+$$
+C_1\preceq C_2
+\quad:\Longleftrightarrow\quad
+A_2\Rightarrow A_1
+\quad\text{and}\quad
+G_1\Rightarrow G_2 .
+$$
+
+**Merging and separation.** For saturated $C_1,C_2$,
+
+$$
+\boxed{
+\begin{aligned}
+C_1\bullet C_2
+&:=\left\langle\, A_1\land A_2
+\;\middle|\;(G_1\land G_2)\lor\neg(A_1\land A_2)\,\right\rangle,\\[2pt]
+C_1\div C_2
+&:=\left\langle\,(A_1\land G_2)\lor\neg(G_1\land A_2)
+\;\middle|\;G_1\land A_2\,\right\rangle.
+\end{aligned}
+}
+$$
+
+Merging conjoins both slots and re-saturates; on unconditional contracts it
+reduces to conjoining guarantees, the only case Steps 1, 2 and 4 need. Step 3
+needs the general form, because $\bar C^{sp}$ has a nontrivial assumption.
+Separation is the residual that the repair of Mallozzi et al. calls for: it
+satisfies the characterization used in §3, $C_1\preceq C_2\bullet(C_1\div C_2)$,
+and is the least such contract under $\preceq$. Both results are again
+saturated.
+
+**Consistency, compatibility, realizability.** All three are satisfiability
+questions over admissible trajectories at anchor $0$:
+
+$$
+\begin{aligned}
+C\ \text{consistent}
+&\quad:\Longleftrightarrow\quad
+\exists\ \text{admissible }\xi:\ (\xi,0)\models G,\\
+C\ \text{compatible}
+&\quad:\Longleftrightarrow\quad
+\exists\ \text{admissible }\xi:\ (\xi,0)\models A,\\
+C\ \text{realizable}
+&\quad:\Longleftrightarrow\quad
+\exists\ \text{admissible }\xi:\ (\xi,0)\models A\land G.
+\end{aligned}
+$$
+
+Consistency asks whether the promise can be kept, compatibility whether the
+assumption can be met, and realizability both at once. On an unconditional
+contract all three coincide with the original definition, which is the only
+case Steps 2 and 4 use. On a conditional contract consistency alone is weak:
+the saturated guarantee $G\lor\neg A$ is satisfied vacuously by any trajectory
+violating $A$, so a contract with an unsatisfiable assumption is consistent and
+useless. Realizability is the query that survives a nontrivial assumption, and
+$\bar C^{\mathrm{post}}$ in §3 is exactly the realizability query of
+$\bar C^{ms}$ written as an unconditional contract.
+
+These are definitions, not procedures. The next subsection gives the one
+procedure that decides them for the formulas this protocol actually builds.
+
+### Requests
 
 Requests are assumed to have the form
 
@@ -143,6 +246,125 @@ $$
 If $I=\varnothing$, the request is trivially infeasible and negotiations can be terminated without agreement.
 
 **Note.** The request contract could be redefined under the interpretation "Find a request contract 'charge for $d$ duration' within $I$ interval." Under that interpretation, one could imagine new syntax and semantics for contracts, such as $\exists_I\left\langle\top\;\middle|\;\square_d(\textit{job}=k)\right\rangle.$
+
+### The reservation fragment and its realization
+
+The introduction commits this protocol to being contract-driven. That commits
+it to something checkable: interval arithmetic may appear only **inside the
+realization of a contract operation**, never as a second, independently
+computed answer that a contract-level statement is afterwards reconciled with.
+This subsection states the realization once. Steps 2, 3, 4 and 6 each reach
+into the formula layer, and each does so by applying the lemma below rather
+than by intersecting intervals on its own authority. (Policy inputs are outside
+this rule: the start set and §4's representative rule choose *which* contracts
+to build, they do not compute a contract's result.)
+
+**The fragment.** Every formula this protocol builds is a Boolean combination
+of **region atoms**
+
+$$
+\square_S(\textit{job}=k),
+\qquad
+\lozenge_S(\textit{job}=k),
+$$
+
+and their projections $\square_Sp$, $\square_S\neg p$, $\lozenge_Sp$,
+$\lozenge_S\neg p$, where each region $S\subseteq\mathbb I$ is a finite union of
+intervals spelled by the grouping convention above. Call this the
+**reservation fragment**. It is closed under $\land$, $\lor$ and negation:
+negation-normal form only exchanges the two operators, since
+$\neg\square_S\varphi\equiv\lozenge_S\neg\varphi$.
+
+**The fragment is read at a fixed anchor.** A region atom denotes
+$W_S(0)=S\cap[0,\infty)\cap\mathbb I=S$ *because* the anchor is $0$ and
+$\mathbb I=[0,\infty)$. At anchor $a$ the same atom denotes $S\cap[a,\infty)$.
+Every identity below — including §2's envelope rewrite — is therefore a
+statement about formulas at anchor $0$, not an anchor-free identity. The whole
+protocol evaluates at anchor $0$, so this costs nothing; it is stated because
+the identities are false without it.
+
+**Normalization.** Put a fragment formula into negation-normal form, spell each
+disconnected region as its components, and apply the two region rewrites
+
+$$
+\begin{aligned}
+\square_I\square_d\varphi
+&\;\equiv\;\square_{I\oplus[0,d)}\varphi,\\
+\square_R\psi\land\lozenge_E\varphi
+&\;\equiv\;\square_R\psi\land\lozenge_{E\setminus R}\varphi
+&&\text{when }\varphi\land\psi\text{ is contradictory,}
+\end{aligned}
+$$
+
+then take the conjunctive normal form closed under resolution, discarding
+tautologous and subsumed clauses. The first rewrite needs the anchor; the
+second does not, since a witness in $W_E(0)$ avoids $R$ exactly when it avoids
+$W_R(0)$. Both preserve local truth, because a temporal condition is globally
+valued at its anchor
+([CODE.md](CODE.md#parsing-formatting-rewriting-and-traversal)). Resolution is
+the step that does real work, and §3 shows it is not bookkeeping.
+
+**Lemma (realization over the reservation fragment).** Fix anchor $0$ and
+$\mathbb I=[0,\infty)$, and let $G$ be normalized as above. Then:
+
+1. **Consistency.** $G$ is consistent exactly when its normal form is not
+   $\bot$. The fragment admits only two sources of contradiction, and each is
+   decided by a region intersection:
+
+   $$
+   \square_Sp\land\square_{S'}\neg p\equiv\bot
+   \iff S\cap S'\neq\varnothing,
+   \qquad
+   \lozenge_Sp\land\square_S\neg p\equiv\bot .
+   $$
+
+   Soundness is immediate, since normalization preserves equivalence: a normal
+   form $\bot$ means $G$ has no model. Exactness — that a surviving normal form
+   always has one — rests on the model having no dynamics. The signal may take
+   any value at any time, so a trajectory is assembled by choosing one
+   satisfied literal per clause, setting $\textit{job}$ to $k$ throughout the
+   regions its universal literals demand and at one point inside each
+   existential literal's region, and to an unused id elsewhere. Mutual
+   exclusion of signal values is the only interaction between literals, which
+   is why the two contradictions above are the only ones.
+2. **Witness region.** A normal form $\square_R\neg p\land\lozenge_Ep$ permits
+   the requested job exactly on $E\setminus R$, which is what the second
+   rewrite has already computed. The region is *read off* the normalized
+   guarantee, not calculated beside it.
+3. **Containment.** Let $J=E\setminus R$ be the witness region of clause 2 and
+   let $J'=[s,s+d)$ with $s\in I$, so that $J'\subseteq E$ holds by
+   construction. Then $J'\subseteq J$ reduces to $J'\cap R=\varnothing$, which
+   is clause 1 applied to
+   $\langle\top\mid\square_R\neg p\land\square_{J'}p\rangle$. Containment is
+   therefore not a separate test.
+
+The protocol's four uses of the formula layer are the four applications of this
+lemma:
+
+| Site | Query | Lemma clause |
+| --- | --- | --- |
+| §2 | is $\bar C^{\mathrm{cand}}$ consistent? | 1 |
+| §3 | which region does $\bar C^{\mathrm{post}}$ still permit? | 2 |
+| §4 | does $J_s$ fit, and is it consistent with the commitments? | 3, then 1 |
+| §6 | is the accepted contract still consistent with current commitments? | 1 |
+
+§4 and §6 are callers of the same query as §2, not new checks. An
+implementation should share one procedure across all four; where the reference
+implementation has separate `consistent`, `availability` and `erode` helpers,
+they are three entry points to this lemma and agree by construction rather than
+by coincidence.
+
+**Scope.** The lemma is exact for the reservation model and nothing more. It
+relies on the fragment having no dynamics: allocation is permitted wherever no
+reservation blocks it. Add energy, ramping, or resource coupling and clause 1's
+witness construction fails — the surviving clauses no longer describe an
+admissible trajectory — so consistency must be decided by satisfiability over
+admissible trajectories, the reachability query of
+[BACKEND.md](BACKEND.md). The queries in Steps 2, 3, 4 and 6 are stated as
+contract-level questions precisely so that such a model changes only this
+subsection.
+
+
 ## 1. Project stored reservations to the requested job
 
 **Storage design.** Store each accepted allocation as its concrete job ID
@@ -223,7 +445,16 @@ window.
 This deliberate strengthening exposes conflicts anywhere in the envelope;
 it is temporary and is never stored as a reservation.
 
-Merge with the projected commitments and test:
+**The envelope rewrite holds at anchor $0$, not in general.** The second line
+above is the first region rewrite of the realization lemma, and it is not a
+plain identity. The envelope is built from the *window* $W_I(a)=I\cap[a,\infty)\cap\mathbb I$,
+so starts before the anchor impose nothing: with $I=\{1,2,3,4\}$ and $d=1$,
+reading $\square_I\square_dp$ at anchor $0$ gives $\square_{[1,5)}p$, but at
+anchor $3$ it gives $\square_{[3,5)}p$. The protocol reads every contract at
+anchor $0$, where $W_I(0)=I$, so $\bar G^s\equiv\square_{I\oplus[0,d)}p$ as
+written. Anywhere else the rewrite must be re-derived against the anchor.
+
+Merge with the projected commitments:
 
 $$
 \begin{aligned}
@@ -231,11 +462,40 @@ $$
 &:=\bar C^{\mathrm{cmt}}\bullet\bar C^s
 \;=\langle\top\mid\bar K\land\bar G^s\rangle\\
 &=\langle\top\mid\square_R\neg p\land
-\square_{I\oplus[0,d)}p\rangle,\\
-\bar C^{\mathrm{cand}}\text{ consistent}
-&\quad\Longleftrightarrow\quad (I\oplus[0,d))\cap R=\varnothing.
+\square_{I\oplus[0,d)}p\rangle .
 \end{aligned}
 $$
+
+**The test is a contract-level query.** What Step 2 asks is the consistency
+query of the previous section, and nothing else:
+
+$$
+\boxed{
+\bar C^{\mathrm{cand}}\ \text{consistent}
+\quad:\Longleftrightarrow\quad
+\exists\ \text{admissible }\xi:\
+(\xi,0)\models\square_R\neg p\land\square_{I\oplus[0,d)}p .
+}
+$$
+
+This is the definition. The interval test is its *realization*, obtained by
+applying clause 1 of the realization lemma: the normalized guarantee is a
+conjunction of two universal region literals, whose only available
+contradiction is $\square_Sp\land\square_{S'}\neg p$ with $S\cap S'\neq\varnothing$.
+Hence
+
+$$
+\bar C^{\mathrm{cand}}\ \text{consistent}
+\quad\Longleftrightarrow\quad
+(I\oplus[0,d))\cap R=\varnothing .
+$$
+
+The order matters. Deciding the question by intersecting two intervals needs no
+contracts at all, so if the intersection came first the contract machinery would
+be narration. It comes second, as one instance of a query that Steps 3, 4 and 6
+also raise and that a richer model answers differently — by satisfiability over
+admissible trajectories, with disjointness no longer sufficient. The scope note
+in the realization lemma governs here.
 
 - **Success:** set $J:=I\oplus[0,d)$ and proceed to Step 4.
 - **Failure:** proceed to Step 3 to remove blocked portions of the envelope.
@@ -245,10 +505,6 @@ For example, with $h=4$, $d=1$, and $R=[1.5,3)$, the request envelope is
 $I\oplus[0,d)=[1,5)$.
 The candidate contract is inconsistent because of the conflict on $[1.5,3)$,
 although the original request can still use $J_3=[3,4)$.
-
-The intersection criterion is exact for the reservation model above. With
-additional dynamics or resource constraints, use satisfiability over
-admissible trajectories; disjointness alone only rules out reservation conflicts.
 
 ## 3. Repair availability
 
@@ -283,7 +539,7 @@ $$
 \bar C^{ms}:=\bar C^{sp}\bullet\bar C^{\mathrm{cmt}}.
 $$
 
-The standard definition of separation makes $\bar C^{sp}$ the least separating
+The definition of $\div$ in §Inputs makes $\bar C^{sp}$ the least separating
 contract in the refinement preorder such that
 
 $$
@@ -296,17 +552,82 @@ Thus $\bar C^{ms}$ is the separation--merge repair: an abstraction of
 $\bar C^w$ that retains the weakened availability goal under the assumptions
 needed to coexist with the projected commitments.
 
-For $\bar C^{ms}=\langle\bar A^{ms}\mid\bar G^{ms}\rangle$, make its
-assumption an explicit requirement in the scheduling query:
+**Computing the repair.** Write $E:=I\oplus[0,d)$. Both inputs are
+unconditional, so the definitions of $\div$ and $\bullet$ give
+
+$$
+\begin{aligned}
+\bar C^{sp}
+&=\bar C^w\div\bar C^{\mathrm{cmt}}
+=\left\langle\ \bar K\lor\neg\lozenge_Ep\ \middle|\ \lozenge_Ep\ \right\rangle
+=\left\langle\ \bar K\lor\square_E\neg p\ \middle|\ \lozenge_Ep\ \right\rangle,\\[2pt]
+\bar A^{ms}&=\bar K\lor\square_E\neg p,\\[2pt]
+\bar G^{ms}&=(\lozenge_Ep\land\bar K)\lor\neg\bar A^{ms}
+=(\lozenge_Ep\land\bar K)\lor(\lozenge_Ep\land\lozenge_Rp).
+\end{aligned}
+$$
+
+This is the one place in the protocol where a nontrivial assumption appears,
+and it is an artifact of separation rather than a statement about anyone's
+environment. That is why the next step can discharge it outright.
+
+**Promoting the assumption.** For
+$\bar C^{ms}=\langle\bar A^{ms}\mid\bar G^{ms}\rangle$, make its assumption an
+explicit requirement in the scheduling query:
 
 $$
 \bar C^{\mathrm{post}}
-:=\langle\top\mid\bar A^{ms}\land\bar G^{ms}\rangle
-=\langle\top\mid\bar K\land\lozenge_{I\oplus[0,d)}p\rangle.
+:=\langle\top\mid\bar A^{ms}\land\bar G^{ms}\rangle .
 $$
 
-The last equality is the specialization of the separation/merging algebra to
-these unconditional inputs. Simplify the remaining guarantee using
+This is a choice, and it is sound for a stated reason. Promotion is exactly the
+realizability query of $\bar C^{ms}$ written as an unconditional contract, and
+the promoted contract refines the conditional one,
+
+$$
+\langle\top\mid A\land G\rangle
+\ \preceq\
+\langle A\mid G\lor\neg A\rangle,
+$$
+
+since $A\Rightarrow\top$ and $A\land G\Rightarrow G\lor\neg A$. So anything
+implementing $\bar C^{\mathrm{post}}$ implements $\bar C^{ms}$, and the
+scheduling query is never weakened by the step. What the charger gives up is
+the right to discharge its obligation by blaming the environment: $\bar A^{ms}$
+is a residual produced by separation, not a promise the vehicle made, so the
+charger has no grounds to assume it and instead undertakes to establish it. The
+cost is that promotion can turn an unrealizable repair into an inconsistent
+contract — which is the correct outcome, since the guarantee could not have
+been met anyway. Should the vehicle ever supply a genuine assumption, promotion
+would no longer be the right move and $\bar A^{ms}$ would be discharged against
+that assumption instead.
+
+**The equality is Boolean resolution, not region simplification.** Substituting
+the two displays above,
+
+$$
+\bar C^{\mathrm{post}}
+=\left\langle\top\ \middle|\
+\bigl(\bar K\lor\square_E\neg p\bigr)\land
+\bigl((\lozenge_Ep\land\bar K)\lor(\lozenge_Ep\land\lozenge_Rp)\bigr)\right\rangle .
+$$
+
+Reaching the boxed form takes resolution *across* the two factors. Distribute,
+and use $\lozenge_Sp\land\square_S\neg p\equiv\bot$ twice — once at $S=E$, once
+at $S=R$, where $\lozenge_Rp=\neg\bar K$. The second disjunct dies against both
+branches of the first factor: against $\bar K=\square_R\neg p$ through its
+$\lozenge_Rp$ literal, and against $\square_E\neg p$ through its $\lozenge_Ep$
+literal. In the surviving disjunct the $\square_E\neg p$ branch dies the same
+way, leaving the $\bar K$ branch, which that disjunct already carries:
+
+$$
+\bar C^{\mathrm{post}}
+=\langle\top\mid\bar K\land\lozenge_{I\oplus[0,d)}p\rangle .
+$$
+
+The equality holds, but it is not a specialization that can be read off: it is
+clause-level resolution, the step the realization lemma warns is real work. Only
+afterwards does the region rewrite apply:
 
 $$
 \square_R\neg p\land\lozenge_{I\oplus[0,d)}p
@@ -324,10 +645,20 @@ J:=(I\oplus[0,d))\setminus R,
 }
 $$
 
-Extraction keeps the commitment separately; it does not assert that
-$\bar C^{\mathrm{post}}$ and $\bar C^{\mathrm{avail}}$ are equivalent. The relaxed
-condition only identifies potential charging times. Step 4 restores the
-full duration and start-grid requirements. In the example, $J=[1,1.5)\cup[3,5)$.
+**$J$ is read off, not computed beside.** The rewrite above is the second
+region rewrite of the realization lemma, and the boxed $J$ is clause 2 applied
+to the normalized $\bar C^{\mathrm{post}}$: the witness region a normalized
+$\square_R\neg p\land\lozenge_Ep$ still permits is $E\setminus R$, already
+present as the parameter of the surviving existential literal. No interval
+difference is taken outside the rewrite.
+
+Passing from $\bar C^{\mathrm{post}}$ to $\bar C^{\mathrm{avail}}$ drops the
+conjunct $\bar K$. That is a guarantee weakening, so it is a refinement step in
+the direction of abstraction — $\bar C^{\mathrm{post}}\preceq\bar C^{\mathrm{avail}}$ —
+and not an equivalence. It is sound because the commitment is kept separately
+and re-imposed in Step 4; $\bar C^{\mathrm{avail}}$ alone only identifies
+potential charging times, and Step 4 restores the full duration and start-set
+requirements. In the example, $J=[1,1.5)\cup[3,5)$.
 
 ## 4. Concretize feasible intervals
 
@@ -337,26 +668,68 @@ $$
 C_i^{J'}:=\left\langle\top\mid\square_{J'}(\textit{job}=k)\right\rangle.
 $$
 
-For either outcome of the consistency test, enumerate
+For either outcome of the consistency test, the **feasible start region** is
 
 $$
 \boxed{
-\mathcal J:=\left\{
-J_s=[s,s+d):s\in I,\quad J_s\subseteq J,\quad
-C^{\mathrm{cmt}}\bullet C_i^{J_s}\text{ consistent}
-\right\}.
+F:=I\cap\left\{s:[s,s+d)\subseteq J\right\},
+\qquad
+\mathcal J:=\left\{J_s=[s,s+d):s\in\operatorname{rep}(F)\right\},
 }
 $$
 
-In the reservation model, containment in $J$ supplies the consistency check.
-With additional constraints, check each candidate against the original
-commitments and the system's admissible trajectories. Every retained contract
-refines $C^{\mathrm{req}}$: it chooses an allowed start and preserves $d$.
+where $\operatorname{rep}$ is the representative rule below. Each retained
+$s$ must also make $C^{\mathrm{cmt}}\bullet C_i^{J_s}$ consistent.
 
-A nonempty $J$ can still yield $\mathcal J=\varnothing$ if no full window
-fits. In the running example, only starts $s\in\{3,4\}$ survive;
-the component $[1,1.5)$ is too short. Terminate if $\mathcal J=\varnothing$;
-otherwise pass these alternative contracts to bargaining.
+**Erosion and its endpoints.** The containment test $[s,s+d)\subseteq J$ erodes
+each component of $J$ by $d$. Because both the window and the component are
+half-open, the result is **closed** on the right:
+
+$$
+[a,b)\ \longmapsto\ [a,b-d],
+\qquad
+\text{empty when } b-a<d .
+$$
+
+The right endpoint $s=b-d$ is included: the window $[b-d,b)$ fits, since $s+d$
+lands exactly on the excluded right endpoint of the component, which the window
+also excludes. This is the same half-open convention that lets a new
+reservation start exactly when an existing one ends. A component shorter than
+$d$ admits no start at all, which is why a nonempty $J$ can still give
+$\mathcal J=\varnothing$ — in the running example the component $[1,1.5)$
+contributes nothing and only $s\in\{3,4\}$ survive.
+
+**Representatives.** $F$ may contain continuous components, each holding
+uncountably many starts, while $\mathcal J$ must be finite. Two starts in the
+same component of $F$ differ only in position, not in feasibility, so
+$\operatorname{rep}(F)$ takes one start per component:
+
+- every singleton component of $F$, and
+- for each continuous component, its left endpoint when that endpoint is
+  included, and otherwise the component's midpoint.
+
+No nonempty component is missed, so $\mathcal J=\varnothing$ exactly when
+$F=\varnothing$. When $I$ is the integer start grid, every component of $F$ is
+a singleton and $\operatorname{rep}(F)=F$, which is the case the worked example
+shows. The rule is a **policy input**: it chooses which contracts to build and
+computes no contract's result, so it lies outside the discipline the
+realization lemma imposes. A deployment wanting finer granularity may replace
+it — for instance by sampling each component on a grid — without touching any
+other step.
+
+**The consistency check is the same query as §2.** Containment $J_s\subseteq J$
+is clause 3 of the realization lemma, hence clause 1 applied to
+$\langle\top\mid\square_R\neg p\land\square_{J_s}p\rangle$. It is one instance
+of §2's query, not a second criterion that happens to agree with it, so this
+step needs no "exact for the reservation model" aside of its own. Each
+candidate is then checked against the *original* commitments in the job
+vocabulary rather than the projection, since $\mathcal J$ is what gets stored.
+With additional constraints both checks fall back to satisfiability over
+admissible trajectories, exactly as the lemma's scope note says.
+
+Every retained contract refines $C^{\mathrm{req}}$: it chooses an allowed start
+and preserves $d$. Terminate if $\mathcal J=\varnothing$; otherwise pass these
+alternative contracts to bargaining.
 
 ## 5. Negotiate interval-price pairs
 
@@ -375,28 +748,57 @@ where $v_i$ is the EV's value and $c$ the charger's cost. Each party
 $a\in\{\mathrm{EV},\mathrm{CH}\}$ maintains a target
 $u^a_{\mathrm{exp},r}$ and a minimum acceptable utility $u^a_{\min}$.
 
-**Propose.** The charger starts. The proposer sends a nonempty burst of
-alternatives from $\mathcal J$, with prices targeting its expected utility:
+**Propose.** The charger starts. The proposer prices *every* alternative in
+$\mathcal J$ to meet its current target exactly, then discards those failing its
+own floor:
 
 $$
-\mathcal O_r\subseteq
-\left\{(C_i^{J'},q_r(J')):J'\in\mathcal J\right\},
+\boxed{
+\mathcal O_r:=\left\{(C_i^{J'},q_r(J')):J'\in\mathcal J,\
+u^{\mathrm{prop}}(J',q_r(J'))\ge u^{\mathrm{prop}}_{\min}\right\},
 \qquad
-u^{\mathrm{prop}}(J',q_r(J'))\approx u^{\mathrm{prop}}_{\mathrm{exp},r}.
+u^{\mathrm{prop}}(J',q_r(J'))=u^{\mathrm{prop}}_{\mathrm{exp},r}.
+}
 $$
 
-Thus the charger targets $q_r(J')\approx c(J')+u^{\mathrm{CH}}_{\mathrm{exp},r}$,
-and the EV targets $q_r(J')\approx v_i(J')-u^{\mathrm{EV}}_{\mathrm{exp},r}$.
-Every offer must meet the proposer's utility floor. If no admissible offer
-can be generated, terminate without agreement.
-
-**Evaluate.** The other party selects its highest-utility proposal:
+Both under-determined points in the earlier formulation are now fixed: the
+burst is the whole of $\mathcal J$ rather than an unspecified subset, and
+pricing meets the target with equality rather than approximately. Solving the
+equality gives the closed forms
 
 $$
-(J_r^*,q_r^*)\in
-\operatorname*{arg\,max}_{(J',q):(C_i^{J'},q)\in\mathcal O_r}
+q_r(J')=c(J')+u^{\mathrm{CH}}_{\mathrm{exp},r}
+\quad(\text{charger}),
+\qquad
+q_r(J')=v_i(J')-u^{\mathrm{EV}}_{\mathrm{exp},r}
+\quad(\text{EV}).
+$$
+
+Sending the whole set costs the proposer nothing — every alternative earns it
+the same utility $u^{\mathrm{prop}}_{\mathrm{exp},r}$ — while giving the
+evaluator the widest choice, so a narrower burst could only lose agreements.
+It also makes the floor filter uniform: since each offer yields exactly the
+target, $\mathcal O_r$ is either all of $\mathcal J$ or empty, and it is empty
+exactly when $u^{\mathrm{prop}}_{\mathrm{exp},r}<u^{\mathrm{prop}}_{\min}$.
+Terminate without agreement in that case.
+
+**Evaluate.** The other party selects its highest-utility proposal, breaking
+ties by **earliest start**:
+
+$$
+\boxed{
+(J_r^*,q_r^*):=
+\operatorname*{arg\,min}_{(J',q)\in M_r}\ \min J',
+\qquad
+M_r:=\operatorname*{arg\,max}_{(J',q):(C_i^{J'},q)\in\mathcal O_r}
 u^{\mathrm{eval}}(J',q).
+}
 $$
+
+Distinct alternatives have distinct starts, so the tie-break is total and the
+selection is unique. Without it an $\operatorname{arg\,max}$ over equal-utility
+alternatives leaves runs non-reproducible, and since the accepted interval is
+stored as a commitment, the choice changes every later request.
 
 Before the deadline, accept when this utility meets both the evaluator's
 current target and its minimum. At the deadline, accept if it exceeds the
@@ -412,14 +814,16 @@ u^a_{\mathrm{exp},r+1}
 -u^a_{\mathrm{exp},r}\left(\frac{r}{T}\right)^{\lambda_a}.
 $$
 
-Switch roles and advance to round $r+1$. Utility floors continue to apply
-even if targets fall below them. Counteroffers may change both interval and
+Switch roles and advance to round $r+1$. Utility floors continue to apply even
+if targets fall below them: a proposer whose target has fallen below its floor
+produces an empty burst and the run terminates, rather than re-pricing its
+offers at the floor. Counteroffers may change both interval and
 price within $\mathcal J$. If the request or commitments change, recompute
 feasibility before continuing negotiation.
 
 ## 6. Validate and store the accepted agreement
 
-For an accepted pair $(J^*,q^*)$, revalidate feasibility under current inputs
+For an accepted pair $(J^*,q^*)$, revalidate it against the **current** inputs
 and store the reservation in the form required by Step 1:
 
 $$
@@ -432,12 +836,59 @@ C^{\mathrm{cmt}}&\leftarrow C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}}.
 \end{aligned}
 $$
 
-Perform validation and insertion against the same reservation state; if the
-agreement is no longer feasible, restart scheduling. Store $q^*$ alongside
-the accepted record. For a later request with a different job ID, this record
-projects to $\square_{J^*}\neg p$ and contributes $J^*$ to its unavailable set.
-The conjunctively strengthened contract, repaired availability, and unaccepted
-offers remain temporary.
+**The revalidation predicate.** "Revalidate feasibility" is four checks, all
+against the current request $C^{\mathrm{req}}$ and current commitments
+$C^{\mathrm{cmt}}$. Accept the agreement exactly when
+
+$$
+\boxed{
+\begin{aligned}
+&\text{(i) the job id is }k,
+&&\text{(ii) } J^*=[s^*,s^*+d) \text{ for } s^*:=\min J^*,\\
+&\text{(iii) } s^*\in I,
+&&\text{(iv) } C^{\mathrm{cmt}}\bullet C_i^{\mathrm{acc}} \text{ is consistent.}
+\end{aligned}
+}
+$$
+
+Checks (i)–(iii) are refinement of $C^{\mathrm{req}}$ spelled out. The duration
+must be *exactly* $d$, not merely at least $d$: a longer window would refine
+the request's coverage but occupies time the vehicle did not buy and blocks
+later requests, and $\mathcal J$ never contains one. Check (iv) is the
+consistency query of §2 — clause 1 of the realization lemma — now asked against
+the commitments as they stand rather than as they stood when $\mathcal J$ was
+computed. It is the lemma's fourth caller, not a new kind of check, and under
+additional dynamics it inherits the lemma's scope note. If any check fails,
+restart scheduling from Step 1; do not insert.
+
+**Atomicity.** Validation and insertion must observe one state. Scheduling
+reads the request, the commitments, and the model inputs; bargaining takes
+rounds, during which another session may commit. Take a snapshot at the start
+of scheduling and commit by compare-and-restart:
+
+```text
+snapshot := current request contract, commitment contract, and model inputs
+offers   := Steps 1-4 applied to snapshot
+if offers empty: end without agreement
+agreement := Step 5 over offers
+if no agreement: end without agreement
+atomically:
+    if current inputs differ from snapshot: restart scheduling
+    if the revalidation predicate fails:   restart scheduling
+    insert the reservation and store the price
+```
+
+The atomic block must exclude concurrent inserts on the same charging point;
+everything before it may run without a lock, since a stale snapshot can only
+cause a restart, never a bad insert. Restarting returns to Step 1 with a fresh
+snapshot and recomputed alternatives — the `Valid -- No --> Input` edge of the
+flowchart. A price rejection is not a restart: it ends the run without
+agreement and leaves the reservations unchanged.
+
+Store $q^*$ alongside the accepted record. For a later request with a different
+job ID, this record projects to $\square_{J^*}\neg p$ and contributes $J^*$ to
+its unavailable set. The conjunctively strengthened contract, repaired
+availability, and unaccepted offers remain temporary.
 
 ## Full minimal example
 
@@ -594,10 +1045,11 @@ evaluator's threshold. Costs and values stay fixed throughout these rounds.
 
 ### 6. Revalidate and store
 
-The accepted pair is $(J^*,q^*)=([3,4),4)$. Recheck that its start and
-duration still satisfy the request and that its interval remains compatible
-with current commitments. Validate and insert against the same reservation
-state. Since the inputs have not changed, store
+The accepted pair is $(J^*,q^*)=([3,4),4)$. The revalidation predicate holds:
+the job id is $2$, the duration is exactly $1$, the start $3$ lies in
+$I=\{1,2,3,4\}$, and $[3,4)$ is disjoint from the commitment $[1.5,3)$, so the
+merge is consistent. Since the snapshot still matches the current inputs, the
+atomic block proceeds and stores
 
 $$
 \begin{aligned}

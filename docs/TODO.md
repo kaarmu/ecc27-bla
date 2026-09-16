@@ -17,11 +17,24 @@ $\mathbb I$ pinned) and A.10 (the region a formula denotes is anchor-relative).
 
 ## Section A — Specification gaps
 
+**Status: closed.** All twelve items are implemented in
+[PROTOCOL.md](PROTOCOL.md). The three structural additions are
+§Inputs/*Contracts* (saturation, refinement, the $\bullet$ and $\div$ formulas,
+and the consistency/compatibility/realizability triple),
+§Inputs/*The reservation fragment and its realization* (the one lemma that
+Steps 2, 3, 4 and 6 now each apply), and the pinning of
+$\mathbb I:=[0,\infty)$ and of the admissible shape of $I$. The remaining
+items are local: §2 states consistency as a query and derives the intersection
+test from it, §3 carries the $\bar C^{\mathrm{post}}$ derivation and the
+soundness argument for promotion, §4 gives erosion endpoints and the
+representative rule, §5 fixes the burst and the tie-break, and §6 gives the
+revalidation predicate and compare-and-restart atomicity.
+
 ### Definitional holes
 
 The specification cannot be implemented as written until these are closed.
 
-- [ ] **A.1. Define merging, separation, and consistency for conditional
+- [x] **A.1. Define merging, separation, and consistency for conditional
   contracts, and state saturation.**
   [§Inputs L129-130](PROTOCOL.md#L129-L130) defines
   merging only for unconditional contracts, but
@@ -46,7 +59,7 @@ The specification cannot be implemented as written until these are closed.
   C_1\div C_2=\langle (A_1\land G_2)\lor\neg(G_1\land A_2)\mid G_1\land A_2\rangle.
   $$
 
-- [ ] **A.2. Make §4 well-defined for a continuous start set, or restrict
+- [x] **A.2. Make §4 well-defined for a continuous start set, or restrict
   $I$.** The boxed $\mathcal J$ at
   [§4 L344-348](PROTOCOL.md#L344-L348) is a set comprehension over $s\in I$,
   which is uncountable when $I$ is continuous.
@@ -63,7 +76,7 @@ The specification cannot be implemented as written until these are closed.
 
 ### Claims presented as immediate
 
-- [ ] **A.3. Show, or flag the cost of, the $\bar C^{\mathrm{post}}$
+- [x] **A.3. Show, or flag the cost of, the $\bar C^{\mathrm{post}}$
   equality.** [§3 L302-309](PROTOCOL.md#L302-L309) asserts
   $\langle\top\mid\bar A^{ms}\land\bar G^{ms}\rangle=\langle\top\mid\bar K\land\lozenge_{I\oplus[0,d)}p\rangle$
   as "the specialization of the separation/merging algebra to these
@@ -80,12 +93,12 @@ The specification cannot be implemented as written until these are closed.
   region simplification. Either give the derivation or say the reduction is
   nontrivial.
 
-- [ ] **A.4. Justify promoting the repaired assumption.**
+- [x] **A.4. Justify promoting the repaired assumption.**
   [§3 L299-301](PROTOCOL.md#L299-L301) says to "make its assumption an
   explicit requirement" without an argument for soundness or an account of
   what it means contractually. It is a modelling choice presented as a step.
 
-- [ ] **A.5. Invert the consistency criterion.**
+- [x] **A.5. Invert the consistency criterion.**
   The boxed biconditional at [§2 L235-237](PROTOCOL.md#L235-L237) — consistent
   iff $(I\oplus[0,d))\cap R=\varnothing$ — is what a reader will implement,
   and it makes the construction circular: deciding the question by
@@ -102,18 +115,18 @@ The specification cannot be implemented as written until these are closed.
 
 ### Under-determined choices
 
-- [ ] **A.6. Pin down the offer burst.**
+- [x] **A.6. Pin down the offer burst.**
   [§5 L382-386](PROTOCOL.md#L382-L386) gives $\mathcal O_r\subseteq\{\dots\}$
   with $u^{\mathrm{prop}}\approx u^{\mathrm{prop}}_{\mathrm{exp},r}$; neither
   the subset nor the approximation is specified. The notebook sends every
   alternative, priced to meet the target exactly, filtered by the proposer's
   floor.
 
-- [ ] **A.7. Specify the evaluator's tie-break.**
+- [x] **A.7. Specify the evaluator's tie-break.**
   [§5 L396-399](PROTOCOL.md#L396-L399) selects from an $\arg\max$, leaving
   runs non-reproducible. The notebook breaks ties by earliest start.
 
-- [ ] **A.8. Fix the represented universe $\mathbb I$.**
+- [x] **A.8. Fix the represented universe $\mathbb I$.**
   [§Inputs L92-94](PROTOCOL.md#L92-L94) bounds $\mathbb I$ only from below
   ("containing $0$, the full request envelope, and all reservation
   intervals"), yet the results depend on it: a finite or disconnected
@@ -121,21 +134,21 @@ The specification cannot be implemented as written until these are closed.
 
 ### Unstated conventions and edge cases
 
-- [ ] **A.9. State the erosion endpoints.**
+- [x] **A.9. State the erosion endpoints.**
   $J_s\subseteq J$ ([§4 L345](PROTOCOL.md#L345)) means an available component
   $[a,b)$ admits starts $[a,b-d]$, **closed** at $b-d$, because $[s,s+d)$ fits
   when $s+d$ equals an excluded right endpoint. A component shorter than $d$
   admits none. The only endpoint remark is the aside at
   [L446-447](PROTOCOL.md#L446-L447).
 
-- [ ] **A.10. Note that the strengthening equivalence is anchor-dependent.**
+- [x] **A.10. Note that the strengthening equivalence is anchor-dependent.**
   [§2 L210-212](PROTOCOL.md#L210-L212) states
   $\square_I\square_dp\equiv\square_{I\oplus[0,d)}p$ as a plain identity. The
   envelope is really built from the window $I\cap[a,\infty)\cap\mathbb I$: at
   anchor $3$ the same formula gives $\square_{[3,6)}p$, not
   $\square_{[1,6)}p$. It holds here only because anchor $0$ is fixed.
 
-- [ ] **A.11. Move the revalidation predicate into normative §6, and specify
+- [x] **A.11. Move the revalidation predicate into normative §6, and specify
   atomicity.** [§6 L422](PROTOCOL.md#L422) says only "revalidate feasibility
   under current inputs"; the actual checks appear as prose in the example at
   [L597-599](PROTOCOL.md#L597-599). The notebook requires the same job, a
@@ -147,7 +160,7 @@ The specification cannot be implemented as written until these are closed.
 
 ### Making the contract-driven design internally consistent
 
-- [ ] **A.12. Give the contract operations one realization over the formula
+- [x] **A.12. Give the contract operations one realization over the formula
   fragment this protocol produces, instead of a local interval shortcut at
   each site.** [The introduction (L18-23)](PROTOCOL.md#L18-L23) commits the
   protocol to being contract-driven, so interval arithmetic may appear only
@@ -239,7 +252,7 @@ be revisable mid-session so that a violation is a well-defined event.
 - [ ] **B.2. Derive conjunctive strengthening from an existential presence
   assumption.** Presence admits several strengths, weakest commitment last:
 
-  1. **Committed window** — $\square_{J_s}(\textit{plugged}=k)$, matching the
+  1. **Committed window (Preferred)** — $\square_{J_s}(\textit{plugged}=k)$, matching the
      offer window. The natural default.
   2. **Committed duration, flexible start** —
      $\lozenge_I\square_d(\textit{plugged}=k)$, mirroring the request itself.
@@ -256,6 +269,7 @@ be revisable mid-session so that a violation is a well-defined event.
   proof device and become part of the model. It also opens negotiation over
   assumption strength rather than price alone, which is what the
   assume-guarantee framing is for.
+
 
 - [ ] **B.3. Update the plumbing that assumes $\top$ assumptions.** No change
   to [LOGIC.md](LOGIC.md) is required — the grammar already allows several
