@@ -204,3 +204,103 @@ def _format_name(name: str) -> str:
     if name.isidentifier() and name not in reserved:
         return name
     return json.dumps(name, ensure_ascii=False)
+
+
+def format_latex(formula: Formula | str | bool) -> str:
+    """Format a formula as LaTeX math, without dollar delimiters.
+
+    Preserves precedence and exact temporal bounds; intended for MathJax or
+    LaTeX display, not for parsing back into a formula.
+    """
+    return _format_latex(as_formula(formula), 0)
+
+
+def format_term_latex(term: NumericTerm | int) -> str:
+    """Format a natural-valued term as LaTeX math, without delimiters."""
+    match as_term(term):
+        case NaturalLiteral(value=value):
+            return str(value)
+        case Signal(name=name):
+            return _latex_name(name)
+        case _:
+            raise TypeError("term must be a NumericTerm or natural integer")
+
+
+def _latex_name(name: str) -> str:
+    # Names are data, never executable TeX. Escape each character once.
+    escaped = {
+        "\\": r"\backslash{}", "{": r"\{", "}": r"\}",
+        "_": r"\_", "$": r"\$", "%": r"\%", "&": r"\&", "#": r"\#",
+        "^": r"\mathord{\wedge}", "~": r"\mathord{\sim}", "|": r"\vert{}",
+    }
+    if len(name) == 1 and name.isalpha():
+        return name
+    return r"\mathit{" + "".join(r"\ " if c.isspace() else escaped.get(c, c) for c in name) + "}"
+
+
+def _latex_time(value) -> str:
+    if value.denominator == 1:
+        return str(value.numerator)
+    return rf"\frac{{{value.numerator}}}{{{value.denominator}}}"
+
+
+def _latex_suffix(parameter: TemporalParameter) -> str:
+    from .temporal import RelativeParameter
+    import portion as P
+
+    if parameter is None:
+        return ""
+    if isinstance(parameter, RelativeParameter):
+        text = _latex_time(parameter.duration) + ("]" if parameter.include_endpoint else ")")
+    else:
+        window = parameter.interval
+        if window.empty:
+            text = r"\varnothing"
+        elif window.lower == window.upper:
+            text = r"\{" + _latex_time(window.lower) + r"\}"
+        else:
+            upper = r"\infty" if window.upper == P.inf else _latex_time(window.upper)
+            text = (("[" if window.left == P.CLOSED else "(")
+                    + _latex_time(window.lower) + "," + upper
+                    + ("]" if window.right == P.CLOSED else ")"))
+    return "_{" + text + "}"
+
+
+def _format_latex(formula: Formula, parent: int) -> str:
+    match formula:
+        case Boolean(value=value):
+            text = r"\top" if value else r"\bot"
+        case Proposition(name=name):
+            text = _latex_name(name)
+        case Equal(left=left, right=right):
+            text = format_term_latex(left) + " = " + format_term_latex(right)
+        case Not(operand=Equal(left=left, right=right)):
+            text = format_term_latex(left) + r" \ne " + format_term_latex(right)
+        case Not(operand=operand):
+            text = r"\neg " + _format_latex(operand, _NOT)
+        case And(operands=operands):
+            text = r" \land ".join(_format_latex(c, _AND + 1) for c in operands) if operands else r"\top"
+        case Or(operands=operands):
+            text = r" \lor ".join(_format_latex(c, _OR + 1) for c in operands) if operands else r"\bot"
+        case Implies(left=left, right=right):
+            text = _format_latex(left, _IMPLIES + 1) + r" \to " + _format_latex(right, _IMPLIES)
+        case Equivalent(left=left, right=right):
+            text = _format_latex(left, _EQUIVALENT + 1) + r" \leftrightarrow " + _format_latex(right, _EQUIVALENT + 1)
+        case Selection(inside=inside, outside=outside, parameter=parameter):
+            text = (r"\langle " + _format_latex(inside, 0) + ", "
+                    + _format_latex(outside, 0) + r" \rangle" + _latex_suffix(parameter))
+        case VacuousSelection(body=body, parameter=parameter) | RestrictiveSelection(body=body, parameter=parameter):
+            text = r"\langle " + _format_latex(body, 0) + r" \rangle" + _latex_suffix(parameter)
+            if isinstance(formula, RestrictiveSelection):
+                text += "^{*}"
+        case Always(body=body, parameter=parameter) | Eventually(body=body, parameter=parameter):
+            operator = r"\square" if isinstance(formula, Always) else r"\lozenge"
+            text = operator + _latex_suffix(parameter) + " " + _format_latex(body, _NOT)
+        case Until(left=left, right=right, parameter=parameter) | Release(left=left, right=right, parameter=parameter):
+            operator = "U" if isinstance(formula, Until) else "R"
+            text = (_format_latex(left, _TEMPORAL + 1)
+                    + r" \mathbin{\mathrm{" + operator + "}" + _latex_suffix(parameter) + "} "
+                    + _format_latex(right, _TEMPORAL))
+        case _:
+            raise TypeError(f"unsupported formula type: {type(formula).__name__}")
+    return r"\left(" + text + r"\right)" if _precedence(formula) < parent else text

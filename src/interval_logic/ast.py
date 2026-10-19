@@ -49,6 +49,12 @@ class Formula(ABC):
     def _repr_pretty_(self, printer: Any, cycle: bool) -> None:
         printer.text("..." if cycle else str(self))
 
+    def _repr_latex_(self) -> str:
+        """Render as mathematics in notebooks, without an IPython dependency."""
+        from .pretty import format_latex
+
+        return r"$\displaystyle " + format_latex(self) + "$"
+
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, Formula):
             return NotImplemented
@@ -145,6 +151,11 @@ class NumericTerm(ABC):
         from .pretty import format_term
 
         return format_term(self)
+
+    def _repr_latex_(self) -> str:
+        from .pretty import format_term_latex
+
+        return "$" + format_term_latex(self) + "$"
 
     def equals(self, other: NumericTerm | int) -> Formula:
         return Equal(self, other)

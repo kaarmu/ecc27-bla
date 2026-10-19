@@ -14,10 +14,11 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/interval_logic"]
+packages = ["src/interval_logic", "src/protocol"]
 
 [dependency-groups]
 dev = []
+notebooks = ["plotly", "ipykernel", "nbformat", "nbclient"]
 
 [tool.uv.sources]
-pyspect = { path = "../../Reachability/pyspect", editable = true }
+pyspect = { path = "../pyspect", editable = true }

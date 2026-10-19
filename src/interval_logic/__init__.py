@@ -34,7 +34,7 @@ from .errors import (
     UnsupportedTemporalParameterError,
 )
 from .parser import parse_formula
-from .pretty import format_formula, format_term
+from .pretty import format_formula, format_term, format_latex, format_term_latex
 from .semantics import NaturalSignal, Trace, denote, satisfies, satisfying_times
 from .simplify import expand_derived, simplify, to_nnf
 from .temporal import (
@@ -102,6 +102,8 @@ __all__ = [
     "denote",
     "expand_derived",
     "format_formula",
+    "format_latex",
+    "format_term_latex",
     "format_temporal_parameter",
     "format_term",
     "parse_formula",

@@ -364,8 +364,11 @@ def _prune_blocked_eventually(formula: Formula, context: _Context) -> Formula:
     """Drop the times a conjoined universal condition denies to a witness.
 
     ``always_R psi and eventually_E phi`` cannot be witnessed inside ``R`` when
-    ``psi and phi`` is contradictory, so ``E`` loses ``R``. The remaining region
-    is exactly the one an offer can still use.
+    ``psi and phi`` is contradictory, so ``E`` loses ``R``. A half-open
+    duration witness ``eventually_E always_d phi`` instead loses starts whose
+    duration window meets ``R``. That rewrite needs a known anchor and the
+    full nonnegative universe: a masked or finite trace can have holes in the
+    duration window, which this interval calculation does not model.
     """
     if not isinstance(formula, And):
         return formula
@@ -377,14 +380,27 @@ def _prune_blocked_eventually(formula: Formula, context: _Context) -> Formula:
         return formula
     changed = False
 
-    def denied(body: Formula) -> TimeSet:
+    def denied(body: Formula, *, effective: bool = False) -> TimeSet:
         region = P.empty()
         for blocker in blockers:
             # Bodies meet at a common inspected time, as in conjoined coverage.
             both = _simplify(And((blocker.body, body)), context.reanchored())
             if both == Boolean(False):
-                region |= blocker.parameter.interval
+                region |= (context.window(blocker.parameter) if effective
+                           else blocker.parameter.interval)
         return region
+
+    def denied_starts(region: TimeSet, duration: Fraction) -> TimeSet:
+        # [s, s+d) meets W iff s is in W + (-d, 0]. The lower endpoint
+        # is always open (the booking's right endpoint is excluded), whereas
+        # the upper endpoint inherits W's right endpoint (s itself is used).
+        starts = P.empty()
+        for component in region:
+            lower = component.lower - duration
+            starts |= P.Interval.from_atomic(
+                P.OPEN, lower, component.upper, component.right
+            )
+        return starts
 
     def visit(node: Formula) -> Formula:
         nonlocal changed
@@ -394,7 +410,18 @@ def _prune_blocked_eventually(formula: Formula, context: _Context) -> Formula:
             return _combine(type(node), (visit(child) for child in node.operands))
         if not (isinstance(node, Eventually) and isinstance(node.parameter, AbsoluteParameter)):
             return node
-        region = node.parameter.interval - denied(node.body)
+        inner = node.body
+        if (isinstance(inner, Always)
+                and isinstance(inner.parameter, RelativeParameter)):
+            parameter = inner.parameter
+            if (context.anchor is None or context.universe != _FULL_TIME
+                    or parameter.include_endpoint or parameter.duration <= 0):
+                return node
+            region = context.window(node.parameter) - denied_starts(
+                denied(inner.body, effective=True), parameter.duration
+            )
+        else:
+            region = node.parameter.interval - denied(node.body)
         if region == node.parameter.interval:
             return node
         changed = True

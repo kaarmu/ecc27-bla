@@ -306,5 +306,130 @@ class ContextSimplificationTests(unittest.TestCase):
             self.assert_observations(formula, trace, [0], anchor=0)
             self.assert_observations(formula, trace, [0, 1, 4], universe=FULL)
 
+
+class DurationWitnessPruningTests(unittest.TestCase):
+    def setUp(self):
+        self.p, self.q = il.Proposition('p'), il.Proposition('q')
+
+    def request(self, starts, duration=2, body=None):
+        return il.Eventually(il.Always(self.p if body is None else body, duration), starts)
+
+    def grouped_request(self, starts, duration=2, body=None):
+        return il.Or(self.request(component, duration, body) for component in starts).simplify()
+
+    def test_half_open_booking_boundary_and_rational_endpoints(self):
+        starts = P.closed(0, 10)
+        # Lower blocker endpoints do not change the forbidden lower bound:
+        # a half-open booking ending there never meets the blocker.
+        for block, feasible in (
+            (P.closedopen(4, 6), P.closed(0, 2) | P.closed(6, 10)),
+            (P.open(4, 6), P.closed(0, 2) | P.closed(6, 10)),
+            (P.closed(4, 6), P.closed(0, 2) | P.openclosed(6, 10)),
+            (P.openclosed(4, 6), P.closed(0, 2) | P.openclosed(6, 10)),
+            (P.singleton(4), P.closed(0, 2) | P.openclosed(4, 10)),
+            (P.closedopen(4, P.inf), P.closed(0, 2)),
+        ):
+            with self.subTest(block=block):
+                blocker = il.Always(~self.p, block)
+                self.assertEqual((blocker & self.request(starts)).simplify(anchor=0),
+                                 (blocker & self.grouped_request(feasible)).simplify(anchor=0))
+        blocker = il.Always(~self.p, P.closedopen(F(5, 3), F(7, 3)))
+        feasible = P.closed(0, 1) | P.closed(F(7, 3), 4)
+        self.assertEqual((blocker & self.request(P.closed(0, 4), F(2, 3))).simplify(anchor=0),
+                         (blocker & self.grouped_request(feasible, F(2, 3))).simplify(anchor=0))
+
+    def test_exact_fit_and_fully_blocked_requests(self):
+        blocker = il.Always(~self.p, P.closedopen(4, 6))
+        exact = self.request(P.singleton(2))
+        self.assertEqual((blocker & exact).simplify(anchor=0), (blocker & exact).simplify())
+        blocked = self.request(P.open(2, 6))
+        self.assertEqual((blocker & blocked).simplify(anchor=0), il.Boolean(False))
+
+    def test_pruning_uses_effective_future_and_keeps_reservations(self):
+        blocker = il.Always(~self.p, P.closed(1, 5))
+        formula = blocker & self.request(P.closed(0, 8))
+        self.assertEqual(formula.simplify(anchor=4),
+                         (blocker & self.request(P.openclosed(5, 8))).simplify())
+        # A booking after an already-expired reservation is unaffected.
+        past = il.Always(~self.p, P.closed(1, 3))
+        request = self.request(P.closed(4, 8))
+        self.assertEqual((past & request).simplify(anchor=4), request)
+
+    def test_monotone_disjunction_and_signal_identity(self):
+        acc, use = il.Signal('acc'), il.Signal('use')
+        blocker = il.Always(acc.equals(1), P.closedopen(2, 4))
+        left = self.request(P.closed(0, 1), 1, acc.equals(2))
+        right = self.request(P.closed(2, 5), 1, acc.equals(2))
+        expected = blocker & (left | self.request(P.closed(4, 5), 1, acc.equals(2)))
+        self.assertEqual((blocker & (left | right)).simplify(anchor=0), expected.simplify(anchor=0))
+        for body in (acc.equals(1), use.equals(2)):
+            formula = blocker & self.request(P.closed(0, 5), 1, body)
+            self.assertEqual(formula.simplify(anchor=0), formula.simplify())
+
+    def test_unsupported_contexts_and_nonmonotone_structure_are_unchanged(self):
+        blocker = il.Always(~self.p, P.closedopen(2, 4))
+        request = self.request(P.closed(0, 5))
+        formula = blocker & request
+        for context in ({}, {'universe': FULL},
+                        {'anchor': 0, 'universe': P.closed(0, 9)},
+                        {'anchor': 0, 'universe': FULL - P.open(2, 4)}):
+            with self.subTest(context=context):
+                self.assertEqual(formula.simplify(**context), formula.simplify())
+        for nested in (
+            ~request,
+            il.VacuousSelection(request, 1),
+            il.Eventually(request, P.closed(0, 1)),
+            il.Always(request, P.closed(0, 1)),
+            il.Eventually(il.Always(self.p, '2]'), P.closed(0, 5)),
+        ):
+            self.assertEqual((blocker & nested).simplify(anchor=0), (blocker & nested).simplify())
+
+    def test_forbidden_starts_agree_with_independent_intersection_oracle(self):
+        starts = P.closed(0, 8)
+        candidates = [F(i, 3) for i in range(25)]
+        acc = il.Signal('acc')
+        for duration in (F(1, 3), F(2, 3), F(2)):
+            for block in (P.closedopen(F(5, 3), 4), P.openclosed(F(5, 3), 4),
+                          P.singleton(3), P.open(F(5, 3), 4)):
+                blocker = il.Always(acc.equals(1), block)
+                original = blocker & self.request(starts, duration, acc.equals(2))
+                reduced = original.simplify(anchor=0)
+                # Find the surviving request windows independently of the
+                # dilation implementation, then check actual interval overlap.
+                feasible = P.empty()
+                pending = [reduced]
+                while pending:
+                    node = pending.pop()
+                    if isinstance(node, il.Eventually):
+                        feasible |= node.parameter.interval
+                    pending.extend(node.children)
+                for start in candidates:
+                    with self.subTest(duration=duration, block=block, start=start):
+                        fits = (P.closedopen(start, start + duration) & block).empty
+                        self.assertEqual(start in feasible, fits)
+
+    def test_truth_and_denotation_equivalence_on_full_continuous_traces(self):
+        acc = il.Signal('acc')
+        regions = (P.empty(), FULL, P.closedopen(0, 2), P.closed(2, 4),
+                   P.closedopen(0, 2) | P.closedopen(4, 8), P.singleton(3))
+        for blocked, starts, duration, anchor in (
+            (P.closedopen(2, 4), P.closed(0, 6), F(1), F(0)),
+            (P.singleton(3), P.closed(0, 6), F(2), F(0)),
+            (P.openclosed(F(5, 3), 4), P.closed(0, 6), F(2, 3), F(0)),
+            (P.closed(1, 5), P.closed(0, 8), F(2), F(4)),
+        ):
+            formula = il.Always(acc.equals(1), blocked) & (
+                self.request(starts, duration, acc.equals(2))
+                | self.request(P.singleton(7), duration, acc.equals(2)))
+            reduced = formula.simplify(anchor=anchor)
+            self.assertEqual(reduced.simplify(anchor=anchor), reduced)
+            for assigned in regions:
+                trace = il.Trace(FULL, signals={'acc': il.NaturalSignal({2: assigned}, default=1)})
+                with self.subTest(blocked=blocked, anchor=anchor, assigned=assigned):
+                    self.assertEqual(il.satisfies(formula, trace, anchor),
+                                     il.satisfies(reduced, trace, anchor))
+                    self.assertEqual(il.denote(formula, trace, anchor),
+                                     il.denote(reduced, trace, anchor))
+
 if __name__ == '__main__':
     unittest.main()

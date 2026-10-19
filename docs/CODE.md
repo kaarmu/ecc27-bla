@@ -256,12 +256,23 @@ The canonical public functions are:
 parse_formula(source: str) -> Formula
 format_formula(formula: Formula | str, *, unicode: bool = True) -> str
 format_term(term: NumericTerm | int, *, unicode: bool = True) -> str
+format_latex(formula: Formula | str | bool) -> str
+format_term_latex(term: NumericTerm | int) -> str
 replace(formula: Formula | str, *functions: Callable[[Formula], Formula | str]) -> Formula
 simplify(formula: Formula | str, *, anchor: TimeValue | None = None,
          universe: TimeSet | None = None) -> Formula
 expand_derived(formula: Formula | str) -> Formula
 to_nnf(formula: Formula | str) -> Formula
 ```
+
+`Formula` and `NumericTerm` implement `_repr_latex_()` for native notebook
+math display, without requiring IPython at runtime. `format_latex` and
+`format_term_latex` return LaTeX without dollar delimiters for embedding in
+Markdown (for example, `"$" + format_latex(formula) + "$"`). Rendering preserves
+operator precedence, exact rational bounds, interval endpoint inclusion and
+omitted parameters; relative durations explicitly show `d)` or `d]`. Names are
+escaped as literal identifiers. LaTeX is a display format, not parser input;
+`str`, `repr` and Unicode/ASCII formatting retain their existing behavior.
 
 The parser accepts the Unicode notation in `LOGIC.md` and these ASCII words:
 `true`, `false`, `not`, `and`, `or`, `implies`, `equivalent`, `select`,
@@ -330,7 +341,7 @@ its window is nonempty at every anchor in the default full-time universe. With
 the explicit universe `{0}`, it simplifies to false instead. Always pass the
 actual universe when specializing a formula for a finite or disconnected trace.
 
-Two region rewrites relate a temporal parameter to the region an operand
+Three region rewrites relate a temporal parameter to the region an operand
 actually constrains. Both preserve local truth and anchored masks, because a
 temporal condition is globally valued at its anchor.
 
@@ -366,7 +377,40 @@ Only that monotone Boolean structure is entered: never a negation, a selection,
 or a temporal operand, whose occurrences are inspected at other anchors. The
 rewrite does not apply to `Until`.
 
-Neither rewrite introduces a disconnected temporal parameter. A disconnected
+**Blocked duration-start pruning.** A positive half-open duration request loses
+starts whose duration window would overlap a contradictory reservation:
+
+```text
+always_R psi and eventually_J always_d phi
+    -> always_R psi and eventually_(J_effective \ (R_effective + (-d,0])) always_d phi
+```
+
+Here `d` is a positive half-open relative parameter, both `R` and `J` are
+absolute parameters, and `psi and phi` must be syntactically contradictory under
+the same re-anchored body test. `R_effective` and `J_effective` are their windows
+at the supplied anchor. The reservation stays conjoined: pruning cannot make
+the resulting request forget existing obligations. Further Boolean reduction
+may make a completely blocked conjunction false.
+
+This rewrite requires a known anchor and the full nonnegative universe
+`[0,+inf)`. It does not apply to closed or zero durations, finite or disconnected
+universes, an unknown anchor, or unsupported nested temporal shapes. Those
+contexts retain the original duration request. The full-universe restriction
+matters because a gap in represented time can remove a conflict that the
+ordinary Minkowski sum would otherwise predict. For a blocker `[b,e)`, forbidden
+starts are `(b-d,e)`: a booking ending exactly at `b` or starting exactly at `e`
+remains allowed. Other endpoint types retain their exact interval arithmetic.
+Different values of one signal contradict; equal assignments and assignments
+to different signals do not block one another.
+
+As with direct existential pruning, blockers are retained across monotone
+conjunction and disjunction, and the rewrite does not enter negation, selection
+or another temporal operand. This is a sound formula rewrite, not a new
+general satisfiability API. The sibling `protocol` package separately validates
+and decides its restricted fixed-access-plus-one-duration-request fragment;
+unreduced formulas outside that fragment are explicitly unsupported.
+
+None of these rewrites introduces a disconnected temporal parameter. A disconnected
 result is spelled as the grouping `LOGIC.md` allows for a single parameter: a
 conjunction of universal conditions, or a disjunction of existential ones, over
 the region's connected components. An empty region gives that connective's
@@ -377,8 +421,9 @@ selection branches, the outer anchor is discarded, while known universe
 information is retained. These operands may be inspected at other times. With
 unknown anchor, the simplifier uses only facts valid at every represented
 anchor. The supplied or default universe determines which future points are
-represented. Original temporal parameters are retained unless their operator
-is removed, so no disconnected temporal parameters are introduced.
+represented. Outside the region rewrites above, original temporal parameters
+are retained unless their operator is removed. Disconnected temporal parameters
+are never introduced.
 
 The simplifier must not treat a selection as a condition. The local laws in §“Selection and
 re-anchoring” and §“Zero-duration laws” are not unrestricted mask rewrites:
@@ -777,6 +822,10 @@ The test suite must cover:
 - complete `expand_derived()` lowering and atom-only negation in NNF; these
   transforms and `simplify()` preserve local truth and masks, including
   zero-duration conditions and positive relative selectors;
+- blocked duration-start pruning against an independent interval oracle,
+  including half-open adjacency, exact fits, singleton and disconnected start
+  components, fully blocked requests, nonzero anchors, same-client reservations,
+  and preservation in unsupported temporal contexts;
 - exact atom and Boolean trace denotation;
 - anchored selection through operand-local truth sets, including an operand
   containing a temporal condition, plus until, eventually, always, release,
