@@ -108,7 +108,10 @@ class BookingProtocolTests(unittest.TestCase):
                         expected -= P.open(window.lower - duration, window.upper)
                 self.assertEqual(admission is not None, not expected.empty)
                 offers = self.p.generate(admission)
-                self.assertEqual(len(offers), len(tuple(expected)))
+                grid = tuple(c.lower + n * duration / 2 for c in expected
+                             for n in range(int(2 * (c.upper - c.lower) // duration) + 1)
+                             if c.lower + n * duration / 2 in c)
+                self.assertEqual(tuple(o.start for o in offers), grid)
                 if admission is None:
                     continue
                 self.assertEqual(admission.feasible_starts, expected)
@@ -118,14 +121,37 @@ class BookingProtocolTests(unittest.TestCase):
                 self.assertTrue(decision.satisfiable)
                 self.assertEqual(decision.feasible_starts, expected)
                 self.assertEqual(decision.normalized.guarantee, admission.obligations.guarantee)
-                for component, offer in zip(expected, offers, strict=True):
-                    representative = (component.lower if component.left == P.CLOSED
-                                      else (component.lower + component.upper) / 2)
-                    self.assertEqual(offer.start, representative)
-                    self.assertEqual(offer.interval, P.closedopen(representative, representative + duration))
+                for start, offer in zip(grid, offers, strict=True):
+                    self.assertEqual(offer.interval, P.closedopen(start, start + duration))
                     self.assertTrue(offer.certificate.certified)
                     self.assertTrue(offer.certificate.compatible)
                     self.assertEqual(offer.contract.assumption.simplify(), il.Boolean(True))
+
+    def test_feasible_open_component_without_grid_points_does_not_commit(self):
+        p = self.p
+        commitment, request, admission = self.fixture(P.open(3, F(13, 4)), 1)
+        self.assertIsNotNone(admission)
+        offers = p.generate(admission)
+        self.assertEqual(offers, ())
+        policies = p.affine_policies({}, {})
+        failed = p.bargain(offers, policies, {'owner': 1, 'client': 1}, {'owner': 0, 'client': 0})
+        result = p.commit(admission, offers, failed, commitment)
+        self.assertEqual(result.status, 'NO-BLA')
+        self.assertIs(result.commitment, commitment)
+        self.assertEqual(result.ledger, ())
+
+    def test_generation_inherits_evidence_without_certification_or_sat_queries(self):
+        p = self.p
+        _, _, admission = self.fixture()
+        with patch.object(p, 'certify_offer', side_effect=AssertionError('independent validation called')), \
+                patch.object(p, 'decide_booking', side_effect=AssertionError('SAT called')), \
+                patch('protocol.bookings.decide_booking', side_effect=AssertionError('SAT called')), \
+                patch('protocol.verification.decide_booking', side_effect=AssertionError('SAT called')):
+            offers = p.generate(admission)
+        self.assertEqual(tuple(o.start for o in offers), (F(1), F(3), F(7, 2), F(4), F(9, 2)))
+        for offer in offers:
+            self.assertIn(offer.start, admission.feasible_starts)
+            self.assertEqual(offer.certificate, p.certify_offer(admission, offer.booking))
 
     def test_exact_feasibility_agrees_with_an_independent_intersection_oracle(self):
         for duration, block in product(
@@ -366,8 +392,8 @@ class BargainingProtocolTests(unittest.TestCase):
         self.commitment = p.standing(p.Booking(1, P.closedopen(2, 3)))
         self.admission = p.admit(p.Request(2, p.Service(P.closedopen(1, 5), 1)), self.commitment)
         self.offers = p.generate(self.admission)
-        self.costs = dict(zip(self.offers, (F(2), F(3)), strict=True))
-        self.values = dict(zip(self.offers, (F(8), F(7)), strict=True))
+        self.costs = {o: F(3, 2) + o.start / 2 for o in self.offers}
+        self.values = {o: F(17, 2) - o.start / 2 for o in self.offers}
         self.policies = p.affine_policies(self.costs, self.values)
         self.targets = {"owner": F(4), "client": F(6)}
         self.minima = {"owner": F(1), "client": F(1)}
@@ -510,6 +536,23 @@ class BargainingProtocolTests(unittest.TestCase):
         self.assertEqual(unchanged.ledger, (previous,))
         self.assertIsNone(unchanged.agreement)
 
+    def test_commit_uses_frozen_offers_without_regeneration_or_sat_queries(self):
+        p = self.p
+        supplied = list(self.offers)
+        negotiation = p.bargain(supplied, self.policies, self.targets, self.minima)
+        supplied.clear()
+        self.assertEqual(negotiation.offers, self.offers)
+        with patch.object(p, 'generate', side_effect=AssertionError('regeneration called')), \
+                patch.object(p, 'certify_offer', side_effect=AssertionError('independent validation called')), \
+                patch.object(p, 'decide_booking', side_effect=AssertionError('SAT called')), \
+                patch('protocol.bookings.decide_booking', side_effect=AssertionError('SAT called')), \
+                patch('protocol.verification.decide_booking', side_effect=AssertionError('SAT called')):
+            committed = p.commit(self.admission, self.offers, negotiation, self.commitment)
+        self.assertEqual(committed.agreement, p.BLA(negotiation.agreement.offer.contract,
+                                                  negotiation.agreement.price))
+        with self.assertRaises(ValueError):
+            p.commit(self.admission, self.offers, replace(negotiation, offers=()), self.commitment)
+
     def test_commit_rejects_changed_snapshot_offer_set_or_accepted_pair(self):
         p = self.p
         result = self.bargain()
@@ -537,8 +580,8 @@ class ProtocolTimelineTests(unittest.TestCase):
         self.admission = p.admit(self.request, self.commitment)
         self.offers = p.generate(self.admission)
         policies = p.affine_policies(
-            dict(zip(self.offers, (F(2), F(3)), strict=True)),
-            dict(zip(self.offers, (F(8), F(7)), strict=True)),
+            {o: F(3, 2) + o.start / 2 for o in self.offers},
+            {o: F(17, 2) - o.start / 2 for o in self.offers},
         )
         self.negotiation = p.bargain(
             self.offers, policies,
@@ -595,7 +638,7 @@ class ProtocolTimelineTests(unittest.TestCase):
             "standing": {"[2,3)"},
             "requested_starts": {"[1,5)"},
             "feasible_starts": {"{1}", "[3,5)"},
-            "candidate": {"[1,2)", "[3,4)"},
+            "candidate": {"[1,2)", "[3,4)", "[7/2,9/2)", "[4,5)", "[9/2,11/2)"},
             "committed": {"[2,3)", "[1,2)"},
         }
         for kind, intervals in expected_intervals.items():
@@ -604,7 +647,7 @@ class ProtocolTimelineTests(unittest.TestCase):
                                  intervals)
         candidates = self.traces(figure, "candidate")
         self.assertEqual({t.meta["lane"] for t in candidates},
-                         {"candidate_1", "candidate_2"})
+                         {f"candidate_{i}" for i in range(1, 6)})
         accepted = [t for t in self.traces(figure, "committed") if t.meta["accepted"]]
         self.assertEqual([(t.meta["client"], t.meta["interval"]) for t in accepted],
                          [(2, "[1,2)")])
@@ -640,7 +683,7 @@ class ProtocolTimelineTests(unittest.TestCase):
         )
         self.assertTrue(all(not t.meta["accepted"]
                             for t in self.traces(figure, "committed")))
-        self.assertEqual(len(self.traces(figure, "candidate")), 2)
+        self.assertEqual(len(self.traces(figure, "candidate")), 5)
 
     def test_rational_open_components_and_singletons_retain_exact_labels(self):
         p = self.p
@@ -669,7 +712,8 @@ class ProtocolTimelineTests(unittest.TestCase):
         self.assertIn("1/3", hover_text)
         self.assertIn("5/3", hover_text)
         self.assertEqual({t.meta["interval"] for t in self.traces(figure, "candidate")},
-                         {"[1,4/3)", "[7/3,8/3)"})
+                         {"[1/2,5/6)", "[2/3,1)", "[5/6,7/6)", "[1,4/3)",
+                          "[7/6,3/2)", "[4/3,5/3)", "[3/2,11/6)", "[7/3,8/3)"})
 
     def test_signal_scenarios_report_semantics_and_switch_complete_trace_groups(self):
         p = self.p

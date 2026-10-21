@@ -19,9 +19,9 @@ from .policies import (PricedOffer, Policies, BargainRound, BargainingResult, BL
                        checked_proposal, checked_acceptance, checked_concession,
                        validate_commit, policy_utilities)
 from .verification import (independent_feasible_starts, joint_witness,
-                           check_joint_behavior, check_boolean_algebra)
+                           check_joint_behavior, check_boolean_algebra, certify_offer)
 from .presentation import (fmt, table, protocol_horizon, plot_booking_progression,
-                           plot_signal_traces, display_timeline,
+                           md, plot_signal_traces, display_timeline,
                            illustrative_signal_scenarios, export_timelines)
 from ._util import FULL, acc, use, grouped
 
@@ -32,7 +32,8 @@ __all__ = [
     'PricedOffer', 'Policies', 'BargainRound', 'BargainingResult', 'BLA', 'CommitResult',
     'affine_policies', 'validate_bargaining', 'checked_proposal', 'checked_acceptance',
     'checked_concession', 'validate_commit', 'policy_utilities', 'independent_feasible_starts',
-    'joint_witness', 'check_joint_behavior', 'check_boolean_algebra', 'fmt', 'table',
+    'joint_witness', 'check_joint_behavior', 'check_boolean_algebra', 'fmt', 'table', 'md',
+    'certify_offer',
     'protocol_horizon', 'plot_booking_progression', 'plot_signal_traces',
     'display_timeline', 'illustrative_signal_scenarios', 'export_timelines',
     'FULL', 'acc', 'use', 'grouped',

@@ -22,9 +22,9 @@ than maintaining another implementation.
 | Module | Documented background API |
 | --- | --- |
 | `protocol.contracts` | `Contract(A, G)` stores `G ∨ ¬A`; `.compose`, `.quotient`, `.conjoin`, `.normalize`; `normalize(formula, now)` performs exact Boolean resolution and supported temporal rewriting. CNF internals are private. |
-| `protocol.bookings` | `Service(starts, duration)`, `Request(client, service, alternatives)`, `Booking(client, interval)` validate exact rational data; `standing`, `decide_booking`, `representative_starts`, `validate_standing`; immutable admission/decision/offer records. |
+| `protocol.bookings` | `Service(starts, duration)`, `Request(client, service, alternatives)`, `Booking(client, interval)` validate exact rational data; `standing`, `decide_booking`, `representative_starts(starts, duration)`, `validate_standing`; immutable admission/decision/offer records. |
 | `protocol.policies` | `Policies(utility, propose, accept, concede)` and immutable round, priced-offer and ledger records; `affine_policies`; `validate_bargaining`, `checked_proposal`, `checked_acceptance`, `checked_concession`, `policy_utilities`, `validate_commit` validate individual inputs/outputs without running a protocol stage. |
-| `protocol.verification` | `independent_feasible_starts(service, bookings, client, now)`, `joint_witness(bookings, use_bookings)`, `check_joint_behavior(trace, owner, client, task, now)`, `check_boolean_algebra()`. |
+| `protocol.verification` | `independent_feasible_starts(service, bookings, client, now)`, `joint_witness(bookings, use_bookings)`, `check_joint_behavior(trace, owner, client, task, now)`, `check_boolean_algebra()`, `certify_offer(admission, booking)` for independent validation of supplied bookings. |
 | `protocol.presentation` | `fmt`, `table`, `protocol_horizon`, `plot_booking_progression`, `plot_signal_traces`, `display_timeline`, `illustrative_signal_scenarios`, `export_timelines(path, *figures)`; Plotly is imported only when needed. Plotting primitives are private. |
 
 These names are also available from `protocol`. Shared `acc`, `use`, `FULL` and
@@ -251,7 +251,7 @@ H_s=\square_{[s,s+d)}(acc=k).
 $$
 
 It promises access throughout the booking without prohibiting additional
-access. Each sampled start receives two independent checks:
+access. Two distinct properties hold for every generated offer:
 
 1. **Certification.** For $s\in J$ not before the anchor, the booking supplies
    a witness for $S_a$, so $K_s\preceq Q$. Monotonicity of conjunction gives
@@ -259,25 +259,38 @@ access. Each sampled start receives two independent checks:
    certifies the joint task:
    $C_{\rm client}\otimes(C_{\rm cmt}\wedge K_s)
    \preceq C_{\rm cmt}\wedge R_{\rm task}$.
-2. **Compatibility.** Independently decide whether $L\land H_s$ is
-   satisfiable. A booking can refine the quotient while conflicting with an
-   existing reservation; refinement alone is insufficient.
+2. **Compatibility.** Admission supplies feasible starts
+   $F\subseteq\{s\in J:s\geq now\land\operatorname{Sat}(L\land H_s)\}$.
+   Choosing $s\in F$ therefore inherits compatibility with standing commitments.
+   Refinement alone would not imply compatibility for an arbitrary booking.
 
-These checks are certificates for this booking template. They do not claim to
+Generation constructs a selected-client, selected-duration booking at each
+sampled start in $F$. Certification follows by construction; compatibility
+follows from admission. The witness evidence is recorded without another SAT
+decision. `protocol.verification.certify_offer` independently validates supplied
+bookings, including a fresh compatibility decision; it is used by tests and
+the notebook's evidence section, not by the normal generation path.
+
+These arguments are specific to this booking template. They do not claim to
 decide arbitrary temporal implication or satisfiability. In particular, an
 offer $\langle B\mid H_s\rangle$ can be circular: if the client breaks the
 rule while the owner withholds access, both parties' conditional contracts may
 hold vacuously while the task fails. The implementation's unconditional
 template avoids that circularity.
 
-The notebook generates a finite representative set from the exact feasible
-start region: every singleton, and one representative per continuous
-component. It chooses an included left endpoint; if the left endpoint is open,
-it chooses the component's midpoint. The boundedness of start components makes
-that midpoint available. This sampling does not enumerate all compatible
-bookings in a continuous region. For the supported fragment each nonempty
-component supplies a valid representative; arbitrary future offer templates
-would require their own coverage argument.
+The notebook generates a finite sample from the exact feasible start region.
+For each connected component with left boundary $s_i$, it considers
+$s_i+n d/2$ for $n=0,1,\ldots$, retaining points that belong to that component.
+An excluded left endpoint is skipped; an included right endpoint is sampled
+only if it lies on the grid. Each singleton is retained. All arithmetic is
+exact rational arithmetic, and each disconnected component starts its own grid.
+
+The grid bounds starts, not completion times: a sampled duration-$d$ booking
+may finish beyond its start component. This does not enumerate all feasible
+bookings. A sufficiently narrow open component may contain no grid points;
+there is no midpoint fallback. Thus, feasible admission need not produce any
+offers under this sampling policy, and bargaining over an empty offer set
+returns `NO-BLA` without changing commitments.
 
 ## Bargaining and commitment
 
@@ -312,9 +325,12 @@ C_{\rm cmt}\leftarrow C_{\rm cmt}\wedge K^*.
 $$
 
 The price is ledger metadata and does not enter the temporal guarantee. The
-frozen commitments make the earlier certificates valid through commitment;
-the independent compatibility check ensures the new guarantee remains jointly
-satisfiable. Earlier commitments remain conjoined. No agreement releases an
+unchanged commitment snapshot preserves admission's compatibility result.
+Bargaining retains its immutable offer tuple in `BargainingResult.offers`;
+commitment checks that snapshot and the exact accepted pair against the final
+accepted round. It neither regenerates the offer family nor reruns SAT.
+Compatibility inherited from admission ensures the new guarantee remains
+jointly satisfiable. Earlier commitments remain conjoined. No agreement releases an
 existing reservation because its client is absent. A later request is admitted
 against the updated commitments.
 
@@ -322,13 +338,13 @@ against the updated commitments.
 
 Client 1 already holds access over $[2,3)$. Client 2 requests duration $1$ with
 starts in $[1,5)$ at anchor $0$. The forbidden starts are $(1,3)$, giving
-feasible starts $\{1\}\cup[3,5)$. Representative generation yields the two
-bookings $[1,2)$ and $[3,4)$. The adjacency at times 2 and 3 is valid because
+feasible starts $\{1\}\cup[3,5)$. The grid with spacing $d/2$ samples
+starts $1,3,7/2,4,9/2$, yielding bookings $[1,2)$, $[3,4)$,
+$[7/2,9/2)$, $[4,5)$ and $[9/2,11/2)$. The adjacency at times 2 and 3 is valid because
 the bookings and reservation are half-open.
 
 Use affine utilities
-$u_o(K,q)=q-c(K)$ and $u_c(K,q)=v(K)-q$. Costs for these offers are 2 and 3;
-values are 8 and 7. The notebook computes these from linear functions of the
+$u_o(K,q)=q-c(K)$ and $u_c(K,q)=v(K)-q$. The notebook computes costs and values from linear functions of the
 lead time $\Delta=s-now$: $c(s)=3/2+\Delta/2$ and
 $v(s)=17/2-\Delta/2$. Costs and values are evaluated at the frozen admission
 time for each attempt. `now` is clock state, advanced between attempts;

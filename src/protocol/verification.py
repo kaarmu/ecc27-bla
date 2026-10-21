@@ -4,7 +4,24 @@ from fractions import Fraction as F
 import portion as P
 import interval_logic as il
 from .contracts import Contract
+from .bookings import Booking, Certificate, decide_booking
 from ._util import FULL, region, time
+
+
+def certify_offer(admission, booking):
+    """Independently validate a supplied booking, including a fresh compatibility query.
+
+    For tests and separately supplied bookings. Normal generation inherits these
+    properties from the admitted feasible starts and does not call this helper.
+    """
+    if not isinstance(booking, Booking):
+        raise TypeError('certification requires an unconditional Booking')
+    witness = (booking.client == admission.request.client,
+               booking.duration == admission.service.duration,
+               booking.start in admission.service.starts, booking.start >= admission.now)
+    compatible = decide_booking(
+        admission.commitment.conjoin(booking.contract), admission.now).satisfiable
+    return Certificate(*witness, compatible)
 
 
 def independent_feasible_starts(service, bookings, client, now=0):

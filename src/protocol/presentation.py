@@ -4,12 +4,15 @@ from fractions import Fraction as F
 import portion as P
 import interval_logic as il
 from ._util import FULL, region, time
+from .contracts import Contract
 try:
     from IPython.display import Markdown, display
 except ImportError:
     Markdown, display = str, print
 
 def fmt(value):
+    if isinstance(value, Contract):
+        return value._repr_latex_()
     if isinstance(value, il.Formula):
         return "$" + il.format_latex(value) + "$"
     if isinstance(value, il.NumericTerm):
@@ -18,6 +21,10 @@ def fmt(value):
         return ' ∪ '.join(il.format_temporal_parameter(il.AbsoluteParameter(c))
                           for c in value) or '∅'
     return str(value)
+
+def md(text):
+    """Display Markdown in a notebook, or print plain text otherwise."""
+    display(Markdown(text))
 
 def table(headers, rows):
     def line(values):

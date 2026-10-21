@@ -153,15 +153,34 @@ def validate_standing(commitment, now=0):
     return now
 
 
-def representative_starts(starts):
-    """Every singleton; included left endpoint or midpoint of each component."""
-    return tuple(c.lower if c.left == P.CLOSED else (c.lower + c.upper) / 2
-                 for c in region(starts, bounded=True))
+def representative_starts(starts, duration):
+    """Sample each component's left-anchored duration/2 grid, using exact times.
+
+    Keep only grid points belonging to the component, respecting open/closed
+    endpoints. A short open component may contain no grid points. The bound is
+    on starts; a booking may complete beyond the component's right endpoint.
+    """
+    duration = time(duration)
+    if duration <= 0:
+        raise ValueError('duration must be positive')
+    step = duration / 2
+    result = []
+    for component in region(starts, bounded=True):
+        start = component.lower
+        while start <= component.upper:
+            if start in component:
+                result.append(start)
+            start += step
+    return tuple(result)
 
 
 @dataclass(frozen=True)
 class Certificate:
-    """Actual booking witness conditions, separate from compatibility."""
+    """Booking witness evidence and compatibility, derived or independently checked.
+
+    Generation inherits compatibility from admission's feasible-start membership;
+    independent validation may instead decide compatibility for a supplied booking.
+    """
     same_client: bool
     duration_matches: bool
     start_allowed: bool

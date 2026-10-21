@@ -65,6 +65,12 @@ class Contract:
     def __str__(self):
         return f'⟨ {self.assumption} ∣ {self.guarantee} ⟩'
 
+    def _repr_latex_(self):
+        """Display the stored saturated contract as an assumption/guarantee pair."""
+        return (r'$\displaystyle \left\langle '
+                + il.format_latex(self.assumption) + r' \;\middle\vert\; '
+                + il.format_latex(self.guarantee) + r' \right\rangle$')
+
     def compose(self, other):
         g = self.guarantee & other.guarantee
         return Contract((self.assumption & other.assumption) | ~g, g)

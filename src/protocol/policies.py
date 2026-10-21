@@ -40,6 +40,10 @@ class BargainingResult:
     status: str
     agreement: PricedOffer | None
     history: tuple[BargainRound, ...]
+    offers: tuple[CertifiedOffer, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, 'offers', tuple(self.offers))
 
 def affine_policies(costs, values):
     costs = {o: rational(c, 'cost') for o, c in costs.items()}
@@ -128,12 +132,12 @@ def checked_concession(policies, party, target, minimum):
     return updated
 
 
-def validate_commit(admission, offers, negotiation, commitment, expected_offers):
-    """Check snapshot and exact accepted pair before the notebook updates state."""
+def validate_commit(admission, offers, negotiation, commitment):
+    """Check frozen snapshots and the exact accepted pair; no regeneration or SAT."""
     if admission is None or commitment != admission.commitment:
         raise ValueError('commit requires the unchanged admitted commitment snapshot')
-    if tuple(offers) != tuple(expected_offers):
-        raise ValueError('offers do not belong to this admission attempt')
+    if tuple(offers) != negotiation.offers:
+        raise ValueError('offers differ from the frozen negotiation snapshot')
     pair = negotiation.agreement
     if (negotiation.status != 'ACCEPTED' or not isinstance(pair, PricedOffer)
             or pair.offer not in offers or not negotiation.history

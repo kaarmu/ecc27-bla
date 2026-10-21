@@ -67,6 +67,28 @@ class LatexTests(unittest.TestCase):
             self.assertEqual(data['text/latex'], value._repr_latex_())
             self.assertIn('text/plain', data)
 
+    def test_contract_latex_displays_stored_saturated_guarantee(self):
+        from protocol import Contract
+        from protocol.presentation import fmt
+        contract = Contract(il.Proposition('p'), il.Always('q', F(1, 3)))
+        expected = (r'$\displaystyle \left\langle '
+                    + il.format_latex(contract.assumption) + r' \;\middle\vert\; '
+                    + il.format_latex(contract.guarantee) + r' \right\rangle$')
+        self.assertEqual(contract._repr_latex_(), expected)
+        self.assertEqual(fmt(contract), expected)
+        self.assertIn(r'\neg p', expected)
+        self.assertIn(r'\frac{1}{3}', expected)
+        self.assertEqual(str(contract), f'⟨ {contract.assumption} ∣ {contract.guarantee} ⟩')
+
+    @unittest.skipUnless(find_spec('IPython'), 'Rich display needs IPython')
+    def test_ipython_registers_contract_latex_mime(self):
+        from IPython.core.formatters import DisplayFormatter
+        from protocol import Contract
+        contract = Contract(True, il.Signal('acc').equals(2))
+        data, _ = DisplayFormatter().format(contract)
+        self.assertEqual(data['text/latex'], contract._repr_latex_())
+        self.assertIn('text/plain', data)
+
     def test_protocol_markdown_tables_use_inline_math(self):
         from protocol.presentation import fmt
         self.assertEqual(fmt(il.Always('p', 2)), r'$\square_{2)} p$')

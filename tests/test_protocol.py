@@ -105,8 +105,34 @@ class BookingBackgroundTests(unittest.TestCase):
         for invalid in (True, float('inf'), float('nan'), -1, 0):
             with self.assertRaises((TypeError, ValueError)):
                 protocol.Service(P.singleton(1), invalid)
-        self.assertEqual(protocol.representative_starts(P.singleton(F(1, 3)) | P.open(F(2, 3), F(4, 3))),
+        self.assertEqual(protocol.representative_starts(P.singleton(F(1, 3)) | P.open(F(2, 3), F(4, 3)), F(2, 3)),
                          (F(1, 3), F(1)))
+
+    def test_half_duration_grids_respect_endpoints_and_component_origins(self):
+        cases = (
+            (P.singleton(1) | P.closedopen(3, 5), 1, (F(1), F(3), F(7, 2), F(4), F(9, 2))),
+            (P.openclosed(3, 5), 1, (F(7, 2), F(4), F(9, 2), F(5))),
+            (P.closed(3, 5), 1, (F(3), F(7, 2), F(4), F(9, 2), F(5))),
+            (P.open(3, 5), 1, (F(7, 2), F(4), F(9, 2))),
+            (P.open(0, F(1, 4)), 1, ()),
+            (P.openclosed(0, F(1, 2)), 1, (F(1, 2),)),
+            (P.closed(0, F(1, 4)), 1, (F(0),)),
+            (P.closed(F(1, 3), 1), F(1, 3), (F(1, 3), F(1, 2), F(2, 3), F(5, 6), F(1))),
+            (P.closedopen(F(1, 3), F(2, 3)) | P.closedopen(1, 2), 1, (F(1, 3), F(1), F(3, 2))),
+            (P.empty(), 1, ()),
+            (P.closed(0, 0.3), 0.2, (F(0), F(1, 10), F(1, 5), F(3, 10))),
+        )
+        for starts, duration, expected in cases:
+            with self.subTest(starts=starts, duration=duration):
+                actual = protocol.representative_starts(starts, duration)
+                self.assertEqual(actual, expected)
+                self.assertTrue(all(isinstance(s, F) and s in protocol.Service(starts, duration).starts
+                                    for s in actual))
+        for duration in (0, -1, True, float('inf'), float('nan')):
+            with self.assertRaises((TypeError, ValueError)):
+                protocol.representative_starts(P.closed(0, 1), duration)
+        with self.assertRaises(ValueError):
+            protocol.representative_starts(P.closedopen(0, P.inf), 1)
 
     def test_unknown_formulas_are_not_declared_satisfiable(self):
         with self.assertRaises(protocol.UnsupportedContractError):
