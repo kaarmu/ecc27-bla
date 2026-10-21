@@ -60,7 +60,7 @@ uv run --group notebooks python -m ipykernel install --user --name interval-logi
 Restart the kernel and Run All after source edits. Ordinary imports replace
 path manipulation and automatic reloads. Core protocol imports and decisions
 work without notebook dependencies; figures require the optional group.
-The existing local `pyspect` source configuration remains unchanged.
+The protocol does not require `pyspect` or a local checkout of it.
 
 This document describes the supported booking model, rather than a general
 temporal solver or controller-synthesis procedure.

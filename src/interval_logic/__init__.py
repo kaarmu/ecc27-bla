@@ -50,7 +50,6 @@ from .temporal import (
 )
 from .transform import replace
 from .reachability import ReachabilityBackend, StateSet, existential_satisfying_states
-from .backends import PyspectBackend, PyspectStateSet
 
 
 __version__ = "0.3.0"
@@ -63,8 +62,6 @@ __all__ = [
     "ReachabilityBackend",
     "StateSet",
     "existential_satisfying_states",
-    "PyspectBackend",
-    "PyspectStateSet",
     "AbsoluteParameter",
     "Always",
     "And",
@@ -114,3 +111,21 @@ __all__ = [
     "temporal_window",
     "to_nnf",
 ]
+
+
+
+def __getattr__(name: str):
+    # Keep explicit adapter imports compatible without loading pyspect for core use.
+    if name in {'PyspectBackend', 'PyspectStateSet'}:
+        try:
+            from . import backends
+        except ModuleNotFoundError as error:
+            if error.name == 'pyspect' or (error.name or '').startswith('pyspect.'):
+                raise ModuleNotFoundError(
+                    'The optional Pyspect adapter requires pyspect[symbolic] '
+                    'to be installed separately.', name=error.name) from error
+            raise
+        value = getattr(backends, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

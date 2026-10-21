@@ -2,10 +2,16 @@ from fractions import Fraction as F
 import unittest
 
 import portion as P
-from pyspect.impls.symbolic import (
-    AllDifferent, AllDifferentExceptZero, OneVariableTransition,
-    SymbolicSystem, UnrestrictedTransition,
-)
+try:
+    from pyspect.impls.symbolic import (
+        AllDifferent, AllDifferentExceptZero, OneVariableTransition,
+        SymbolicSystem, UnrestrictedTransition,
+    )
+except ModuleNotFoundError as error:
+    if error.name != 'pyspect' and not (error.name or '').startswith('pyspect.'):
+        raise
+    raise unittest.SkipTest('Optional pyspect symbolic backend is not installed') from error
+
 import interval_logic as il
 
 FULL = P.closedopen(0, P.inf)

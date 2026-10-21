@@ -683,6 +683,12 @@ reachability computation raises `UnsupportedReachabilityError`. A separate
 differ between constrained reachability and existential invariance even for
 the same parameter.
 
+The Pyspect adapter is optional: `pyspect` is not a distribution dependency.
+Core imports, formula/trace operations and the protocol notebook work without it.
+Explicit access to `interval_logic.PyspectBackend` or `PyspectStateSet` loads the
+adapter and requires a separately installed `pyspect[symbolic]`. These optional
+names are excluded from wildcard imports; backend tests skip when unavailable.
+
 Before backend propagation, `existential_satisfying_states()` validates all atoms
 in the original formula, even if a subsequent reduction removes them. It then
 simplifies using the actual query anchor and universe, applies the exact
