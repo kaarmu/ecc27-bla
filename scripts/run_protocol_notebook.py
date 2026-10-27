@@ -15,10 +15,11 @@ from jupyter_client import KernelManager
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cwd', choices=('root', 'notebooks'), default='root')
+    parser.add_argument('--notebook', choices=('protocol', 'charging_morning'), default='protocol')
     parser.add_argument('--save', action='store_true', help='save compact verified outputs')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    path = root / 'notebooks' / 'protocol.ipynb'
+    path = root / 'notebooks' / f'{args.notebook}.ipynb'
     working_directory = root if args.cwd == 'root' else root / 'notebooks'
     notebook = nbformat.read(path, as_version=4)
     manager = KernelManager(kernel_name='python3')

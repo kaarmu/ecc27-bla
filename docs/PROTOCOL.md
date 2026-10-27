@@ -366,6 +366,32 @@ also meets its target exactly. Acceptance records $(K_1,9/2)$ and preserves the
 earlier $[2,3)$ reservation alongside the new $[1,2)$ commitment. The third
 round is unused.
 
+## Sequential morning scenario
+
+[charging_morning.ipynb](../notebooks/charging_morning.ipynb) reuses the exact
+method definitions from the paper companion. `protocol.companion` supplies only
+the definition-cell loader and four-row plotting helper; the new notebook's
+`attempt` wrapper aggregates admission, generation, bargaining and commitment.
+
+Time is measured in minutes since midnight. Existing A/B bookings are retained
+through requests from C at 08:05, D at 08:10 and E at 08:15. C receives its full
+60-minute service; D's infeasible 60-minute request is readmitted at a permitted
+30 minutes; E's compatible offers fail bargaining because the owner requires
+at least €8 and the client accepts at most €6. The final reservations are
+08:00–09:00 A, 09:00–10:00 C, 10:00–10:30 D, 10:30–11:30 B.
+
+Each attempt independently checks feasible starts, retention of earlier booking
+and ledger prefixes, fixed-booking satisfiability, and a complete access trace.
+The figure uses solid commitments, outlined alternatives, red rejected service
+and stars for accepted offers. It shows E's candidates through 13:00 while
+leaving that time unreserved. The round table records the actual proposals.
+
+Reproduce with:
+
+```sh
+uv run --group notebooks python scripts/run_protocol_notebook.py --notebook charging_morning --save
+```
+
 ## Validation and limits
 
 The tests check saturation, refinement direction, composition, quotient

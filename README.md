@@ -97,3 +97,18 @@ kernel and Run All. Saved notebook outputs include both interactive timelines;
 the final cell from the same figure objects. The example preserves feasible
 starts `{1} ∪ [3,5)`, booking `[1,2)` and price `9/2`.
 See [protocol setup, package boundary and evidence](docs/PROTOCOL.md) for details.
+
+
+The [charging morning scenario](notebooks/charging_morning.ipynb) applies the
+unchanged method to three successive requests: full service, permitted duration
+adaptation, and feasible service without agreement on price. It includes one
+four-row timeline, bargaining rounds and preservation checks after each attempt.
+
+```sh
+uv run --group notebooks python scripts/run_protocol_notebook.py --notebook charging_morning --save
+uv run --group notebooks python scripts/run_protocol_notebook.py --notebook charging_morning --cwd notebooks
+```
+
+Its [offline timeline](notebooks/charging_morning.html) is generated from the
+same figure object. The notebook loads only definition cells from
+`protocol.ipynb`; it does not copy or modify their implementations.
