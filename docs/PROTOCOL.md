@@ -392,6 +392,44 @@ Reproduce with:
 uv run --group notebooks python scripts/run_protocol_notebook.py --notebook charging_morning --save
 ```
 
+## Repeated-request experiment
+
+[repeated_requests.ipynb](../notebooks/repeated_requests.ipynb) loads the same
+definition cells and applies them to many successive requests at one charging
+point. The booking horizon is 08:00–18:00, starting from the A/B reservations of
+the morning scenario. Each declared synthetic day has 10, 20 or 40 requests, with
+20 seeds per load level. Durations are 30/60/90 minutes and closed start windows
+are 30/60/120 minutes wide. Every requested start lies in the future, and every
+service ends by 18:00. Half the requests carry one permitted alternative of half
+the duration. Requests are processed in order of receipt against the
+commitments left by earlier attempts.
+
+Bargaining is fixed: affine utilities, earliest-offer proposals, target-based
+acceptance, halfway concession, three rounds, prices €0–€12, targets $(4,4)$
+and minima $(1,1)$. Per-request costs $c\in[1,4]$ and values $v\in[4,10]$
+(half-euro steps) keep both initial targets attainable. They give overlapping
+($v-c\geq2$) and disjoint acceptable price ranges. Agreement needs $v-c\geq7/2$.
+
+After every attempt the notebook checks the following without the contract
+simplifier:
+
+- the selected service and feasible starts agree with
+  `independent_feasible_starts`, and offers overlap no other client's booking;
+- earlier bookings and ledger are an unchanged prefix of the new ones;
+- the commitments are pairwise disjoint and satisfied by the access trace;
+- each agreement witnesses its selected service;
+- accepted prices meet both minima;
+- failures change nothing;
+- bargaining stays within its round budget.
+
+Fourteen boundary cases cover adjacency, exact fits, one-minute overruns, full
+blocking, same-client reservations, open windows that sampling misses, windows
+starting at `now`, and each bargaining-failure kind. Results are one stacked
+outcome figure by load and one table of check counts and median/95th-percentile
+execution times. Failures are split into infeasible service, empty sampled offer
+set and exhausted bargaining. The tests run a two-seed reduction and plant faults
+to confirm that the checks fire.
+
 ## Validation and limits
 
 The tests check saturation, refinement direction, composition, quotient

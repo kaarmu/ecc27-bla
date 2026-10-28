@@ -112,3 +112,15 @@ uv run --group notebooks python scripts/run_protocol_notebook.py --notebook char
 Its [offline timeline](notebooks/charging_morning.html) is generated from the
 same figure object. The notebook loads only definition cells from
 `protocol.ipynb`; it does not copy or modify their implementations.
+
+The [repeated-request experiment](notebooks/repeated_requests.ipynb) runs the
+same method on declared synthetic days (10, 20 and 40 requests, 20 seeds each)
+and on deliberate boundary cases. After every attempt it checks, by direct
+interval-overlap arithmetic and trace evaluation, that earlier commitments are
+retained and jointly satisfiable. It reports one outcome figure and one table of
+disagreements, invariant violations and execution times. The full run takes a
+few minutes; the tests use a reduced workload.
+
+```sh
+uv run --group notebooks python scripts/run_protocol_notebook.py --notebook repeated_requests --save
+```

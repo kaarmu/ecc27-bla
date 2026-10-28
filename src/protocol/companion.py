@@ -163,3 +163,39 @@ def plot_charging_morning(initial, attempts, names):
                             'Thin lines/dots = start regions; red = infeasible original service.',
                        showarrow=False, font=dict(size=12, color='#566373'))
     return fig
+
+
+def plot_outcome_shares(counts, outcomes):
+    """One stacked bar per load level: shares of actual attempt outcomes.
+
+    ``counts`` maps a load level to a Counter over ``outcomes``; the stack order
+    follows ``outcomes``. Segment labels and hover give shares and counts.
+    """
+    import plotly.graph_objects as go
+    colors = ('#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4')
+    ink = ('#ffffff', '#ffffff', '#ffffff', '#0b0b0b', '#ffffff')
+    if len(outcomes) > len(colors):
+        raise ValueError('at most five outcome categories are supported')
+    loads = list(counts)
+    totals = [sum(counts[load].values()) for load in loads]
+    x = [f'{load} requests/day<br>n = {total}' for load, total in zip(loads, totals)]
+    fig = go.Figure()
+    for outcome, color, text_color in zip(outcomes, colors, ink):
+        n = [counts[load][outcome] for load in loads]
+        shares = [100 * k / total for k, total in zip(n, totals)]
+        fig.add_trace(go.Bar(
+            name=outcome, x=x, y=shares, customdata=n, width=.55,
+            marker=dict(color=color, line=dict(color='#ffffff', width=2)),
+            text=[f'{s:.0f}%' if s >= 4 else '' for s in shares],
+            textposition='inside', insidetextanchor='middle', textfont=dict(color=text_color, size=12),
+            hovertemplate=f'{outcome}<br>%{{y:.1f}}% · %{{customdata}} requests<extra></extra>',
+            meta=dict(kind='outcome', outcome=outcome, counts=n)))
+    fig.update_layout(
+        title=dict(text='Attempt outcomes by load level', x=0), template='plotly_white',
+        barmode='stack', bargap=.35, height=460, margin=dict(l=70, r=30, t=70, b=120),
+        yaxis=dict(title='Share of requests (%)', range=[0, 100], dtick=20,
+                   gridcolor='#ECEEF1', zeroline=False),
+        xaxis=dict(title=None), uniformtext=dict(minsize=10, mode='hide'),
+        legend=dict(orientation='h', y=-.18, x=0, traceorder='normal'), hovermode='closest',
+        meta=dict(kind='outcome_shares', loads=loads, totals=totals))
+    return fig

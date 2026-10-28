@@ -15,8 +15,9 @@ from jupyter_client import KernelManager
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cwd', choices=('root', 'notebooks'), default='root')
-    parser.add_argument('--notebook', choices=('protocol', 'charging_morning'), default='protocol')
+    parser.add_argument('--notebook', choices=('protocol', 'charging_morning', 'repeated_requests'), default='protocol')
     parser.add_argument('--save', action='store_true', help='save compact verified outputs')
+    parser.add_argument('--timeout', type=int, default=600, help='per-cell timeout in seconds')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     path = root / 'notebooks' / f'{args.notebook}.ipynb'
@@ -24,7 +25,7 @@ def main():
     notebook = nbformat.read(path, as_version=4)
     manager = KernelManager(kernel_name='python3')
     manager.kernel_spec.argv = [sys.executable, '-m', 'ipykernel_launcher', '-f', '{connection_file}']
-    client = NotebookClient(notebook, km=manager, timeout=120,
+    client = NotebookClient(notebook, km=manager, timeout=args.timeout,
                             resources={'metadata': {'path': str(working_directory)}})
     client.execute(cleanup_kc=True)
     if args.save:
