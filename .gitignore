@@ -27,3 +27,6 @@ cache/
 dispatch_debug.log
 *.geojson
 *.graphml
+
+# Reproducible LTMS BLA numerical artifacts
+/artifacts/ltms_blas/

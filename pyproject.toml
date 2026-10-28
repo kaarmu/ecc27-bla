@@ -9,14 +9,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-reachability = ["pyspect[hj_reachability]==1.2", "pillow"]
+reachability = ["pyspect[hj_reachability]==1.2", "pillow", "matplotlib>=3.10"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/interval_logic", "src/protocol", "src/ltms_reachability"]
+packages = ["src/interval_logic", "src/protocol", "src/ltms_reachability", "src/ltms_bla"]
 
 [dependency-groups]
 dev = []
