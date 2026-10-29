@@ -1,7 +1,5 @@
-"""Independent numerical checks; no LTMS generation/set-operation helpers."""
+"""Generic raster and straight-motion geometry. Model constants live in the notebook."""
 import numpy as np
-
-from . import model as M
 
 
 def boxes_disjoint(first, second):
@@ -18,53 +16,29 @@ def boxes_disjoint(first, second):
     return True
 
 
-def rollout_checks(times, states, controls, *, tube, axes, body_radius,
-                   goal_x=M.EXIT[0][0], managed_halfwidth=M.MANAGED, tolerance=2e-5):
-    # Reference controller: zero steering rate and acceleration. Check the
-    # analytic solution against the Bicycle5D equations, with h=d=0.
-    step = np.diff(times)
-    rhs = np.column_stack((states[:-1, 4]*np.cos(states[:-1, 2]),
-                           states[:-1, 4]*np.sin(states[:-1, 2]),
-                           states[:-1, 4]*np.tan(states[:-1, 3])/M.WHEELBASE,
-                           controls[:-1, 0], controls[:-1, 1]))
-    residual = np.max(abs(np.diff(states, axis=0)-step[:, None]*rhs))
-    indices = [np.abs(np.asarray(a)[:, None]-q[None, :]).argmin(axis=0)
-               for a, q in zip(axes, [times, *states.T])]
-    values = tube[tuple(indices)]
-    # The copied eastbound lane is y in [-.8,0], except the central square.
-    road_ok = bool(np.all((states[:, 1]-body_radius >= M.LANE[0]-tolerance) &
-                          (states[:, 1]+body_radius <= M.LANE[1]+tolerance)))
-    clear_ok = bool(states[-1, 0] >= goal_x-tolerance and
-                    states[-1, 0]-body_radius > managed_halfwidth and residual < 1e-8)
-    return dict(rollout_inside=bool(values.max() <= tolerance),
-                rollout_max_value=float(values.max()), road_ok=road_ok,
-                clear_ok=clear_ok, input_ok=bool(np.max(abs(controls)) <= .1),
-                dynamics_residual=float(residual))
+def aligned_disjoint(a, depart_a, b, depart_b, dt):
+    """Two reservations on one time grid, shifted to their departures, never meet."""
+    offset = int(round((depart_b-depart_a)/dt))
+    first, last = max(0, offset), min(len(a), offset+len(b))
+    if first >= last:
+        return True
+    # Treat slab endpoints as closed: check neighboring time slabs too.
+    for shift in (-1, 0, 1):
+        lo, hi = max(first, offset+shift), min(last, offset+shift+len(b))
+        if lo < hi and not boxes_disjoint(a[lo:hi], b[lo-offset-shift:hi-offset-shift]):
+            return False
+    return True
 
 
-def reference_coverage(reserved, rx, ry, times, *, delay=0., body_radius=M.BODY_RADIUS):
-    """Every swept reference-body box lies in reserved closed cells.
-
-    The reference departs ``delay`` after the reservation's local time zero
-    and is present on [delay, delay+7]. On each time slab the vehicle-center
-    segment is padded by the body radius; this checks complete boxes, not
-    pointwise center membership.
-    """
-    if delay < times[0]-1e-7 or delay+M.CROSSING > times[-1]+1e-7:
-        return False  # presence outside the reservation's time range is uncovered
+def boxes_covered(reserved, rx, ry, boxes):
+    """Every closed workspace box (slab, x0, x1, y0, y1) meets only reserved cells."""
     dx, dy = float(rx[1]-rx[0]), float(ry[1]-ry[0])
-    x0, y0 = M.ENTRY[:2]
-    covered = True
-    for i in range(len(times)-1):
-        start, stop = times[i]-delay, times[i+1]-delay
-        if stop < -1e-7 or start > M.CROSSING+1e-7:
-            continue
-        a = x0+M.SPEED*min(max(start, 0), M.CROSSING)
-        b = x0+M.SPEED*min(max(stop, 0), M.CROSSING)
-        ix = (rx+dx/2 >= a-body_radius) & (rx-dx/2 <= b+body_radius)
-        iy = (ry+dy/2 >= y0-body_radius) & (ry-dy/2 <= y0+body_radius)
-        covered &= bool(reserved[i][np.ix_(ix, iy)].all())
-    return covered
+    for slab, x0, x1, y0, y1 in boxes:
+        ix = (rx+dx/2 >= x0) & (rx-dx/2 <= x1)
+        iy = (ry+dy/2 >= y0) & (ry-dy/2 <= y1)
+        if not reserved[slab][np.ix_(ix, iy)].all():
+            return False
+    return True
 
 
 def minimum_body_gap(first_times, first_states, second_times, second_states, radius):

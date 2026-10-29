@@ -6,21 +6,30 @@ Open `notebooks/ltms_blas.ipynb` or execute it from this repository root:
 uv run --group notebooks python scripts/run_ltms_notebook.py --save
 ```
 
-The coordinator uses the project's Python >=3.14 environment. By default a
-persistent worker is launched with `uv run --no-project --python 3.13`,
-`pyspect[hj_reachability]==1.2`, Pillow and Matplotlib. uv provisions missing dependencies.
-This avoids the missing Python 3.14 JAX wheel on Intel macOS. A preconfigured
-numerical interpreter can instead be selected with `LTMS_WORKER_PYTHON`.
-Do not source the legacy catkin workspace. The coordinator does not import JAX.
+The notebook runs in a **Python 3.13 kernel** with `pyspect[hj_reachability]==1.2`,
+because JAX has no Python 3.14 wheel on Intel macOS. The project itself keeps its
+`requires-python >=3.14`; the protocol and logic packages also run unchanged on 3.13.
+The runner starts that kernel with `uv run --no-project --python 3.13` and the
+packages listed in `scripts/run_ltms_notebook.py`; uv provisions them. A
+preconfigured interpreter can instead be selected with `LTMS_PYTHON`. To work
+interactively, create a persistent environment and select it as the kernel:
 
-The first run performs real Bicycle5D HJ integration; it can take several minutes
-and substantial memory. Progress goes to `artifacts/ltms_blas/worker.log`.
-The notebook reports cold numerical time, memory and model settings. Later runs
-check source/configuration/version and artifact hashes before reusing data.
-The artifact format number is part of the cache key; it is raised whenever stored
-evidence changes meaning, so old evidence is never read with a new interpretation.
-The optional `--cwd notebooks` runner flag tests the other supported working
-directory. For an independent cold run, use a new output directory:
+```sh
+uv venv --python 3.13 .venv-ltms
+uv pip install --python .venv-ltms 'pyspect[hj_reachability]==1.2' pillow \
+  'matplotlib>=3.10' 'portion>=2.6.1' plotly ipykernel
+```
+
+Do not source the legacy catkin workspace.
+
+The first run performs real Bicycle5D HJ integration (the TLT, the four passes and a
+half-step refinement); it takes several minutes and substantial memory. Each solve is
+stored by `ltms_bla.scenario.cached` under a key built from digests of its exact input
+arrays, the grid and dynamics fingerprint, the `ltms_reachability` sources, package
+versions and an artifact format number. The stored file's digest is verified before
+reuse, so changed inputs or evidence meanings never reuse old arrays. The optional
+`--cwd notebooks` runner flag tests the other supported working directory. For an
+independent cold run, use a new output directory:
 
 ```sh
 uv run --group notebooks python scripts/run_ltms_notebook.py --output /tmp/ltms-fresh
@@ -34,23 +43,26 @@ Boolean normalization), **[semantic]** (implications from reference/body contain
 and the fixed client policy), **[numerical]** (TLT and corridor membership on the
 declared grid) or **[independent]** (nominal execution checks and analytic bounds).
 
-1. **Behaviour model and predicates.** `ltms_bla.model` fixes the actors, body,
-   presence and lease intervals, road, goal and time conventions, and a predicate
-   table (arguments, controlling actor, horizon, evidence) for $H_\kappa$, $a_s$,
-   $S_a$, $B_j$ and $S_u$. Exact arithmetic shows that a covered eligible reference
-   yields access compliance, road compliance and timely full-body clearance, and
-   that slower or late references fail. The fixed client departs at the earliest
-   eligible departure whose $a_s$ its accepted guarantee implies.
-2. **Task → TLT → HJ.** The worker returns the task formula
-   `road_e U_[7,8] exit_e`, the realized pyspect tree, the target time samples,
-   the backend call and its constraint-at-witness convention. The local window
+1. **Model.** Notebook cells define the vehicle (`bicycle5d`, control bounds, chart,
+   body disk), the workspace (lane, managed square, goal, `body_in_lane`,
+   `body_clear`) and the fixed client (entry state, `reference`, presence and lease,
+   `eligible`, the deadline relation, the speed bound and `select_departure`), with a
+   predicate table for $H_\kappa$, $a_s$, $S_a$, $B_j$ and $S_u$. A check shows that a
+   covered eligible reference yields access compliance, road compliance and timely
+   full-body clearance, that slower, late or off-centre references fail, and that
+   `bicycle5d` equals the solver's own Bicycle5D.
+2. **Environment, task and corridor.** Notebook cells define the grid, build the
+   eastbound map regions from level-set boxes and hyperplanes (asserted equal to the
+   legacy map), and state which full-body facts the reference-point sets imply. They
+   build the time-masked TLT for `road_e U_[7,8] exit_e` and realize it, run the four
+   LTMS passes (pass 2 is pass 1), intersect with the lane strip, check the full
+   five-state entry state and the reference rollout, and project and inflate the tube
+   into the reservation, checking swept reference-body coverage. The local window
    $[7,8]$ is a sufficient strengthening of "clear by $d$" when $s+8\le d$;
-   otherwise the template is `UNRESOLVED`. A table states which full-body facts the
-   reference-point masks imply. The four LTMS passes are reported separately (pass 2
-   reuses pass 1), with the lane intersection, the full five-state entry query, the
-   reference check and the time-preserving projection and inflation.
-3. **Contracts, admission and offers.** Cells tagged `definitions` define
-   `service_contracts`, `qualify`, `admit`, `generate`, `commit` and `attempt`.
+   otherwise the template is `UNRESOLVED`.
+3. **Contracts, admission and offers.** Cells tagged `definitions` hold the method:
+   the model cells, `service_contracts`, `qualify`, `admit`, `generate`, `commit` and
+   `attempt`, and the scenario inputs.
    Admission retains $C_{\rm client}$, $R_{\rm task}$, $Q$, $C_{\rm cmt}$ and
    $C_{\rm cmt}^{+}$ for each tried service and asserts their identities. Each
    template is qualified by *service evidence* (swept reference body inside the
@@ -102,9 +114,10 @@ rotation. Each attempt filters whole corridor reservations against its frozen
 accepted snapshot. Conflicting templates are rejected; this example does not
 recompute more permissive HJ corridors around an existing reservation.
 
-`ltms_bla` contains the declared model, immutable records, worker transport and
-artifact checks, the notebook-method loader and serial runner, the persistent JSON
-worker, independent geometry checks and presentation helpers. Prices are outside
+`ltms_bla` contains only reusable machinery: immutable records, generic raster
+geometry, input-keyed caching, artifact storage and verification, the
+notebook-method loader and serial runner, and presentation helpers. The model,
+environment and numerical construction live in the notebook. Prices are outside
 the guarantees. The exact accepted offer object and price are stored without
 regeneration. A commit rejects stale snapshots, substituted objects and changed
 artifacts. Unsuccessful attempts preserve earlier BLAs and full reservations,
@@ -155,19 +168,20 @@ SVG/PNG, and an offline interactive HTML figure. The saved notebook keeps compac
 results and native Plotly data. The HTML export includes Plotly itself.
 
 ```sh
-uv run python -m unittest tests/test_ltms_bla_protocol.py tests/test_ltms_bla_model.py -v
 PYTHONPATH=src uv run --no-project --python 3.13 \
-  --with 'pyspect[hj_reachability]==1.2' --with pillow \
-  python -m unittest tests/test_ltms_bla_geometry.py tests/test_ltms_numerics.py -v
+  --with 'pyspect[hj_reachability]==1.2' --with pillow --with portion --with plotly \
+  python -m unittest tests/test_ltms_bla_protocol.py tests/test_ltms_bla_geometry.py \
+  tests/test_ltms_numerics.py -v
 ```
 
 Lifecycle checks run the notebook's own definition cells, through `load_method`,
-against synthetic worker replies: scenario outcomes, prices and departures,
+against a small synthetic reservation: scenario outcomes, prices and departures,
 quotient/conjunction identities, service adaptation, refinement and composition,
 rejection of false evidence, distinct failure meanings, exact identity, stale
 snapshots and parity with the charging bargaining implementation. Model checks
-cover the exact client argument, deadline relations and mask-to-body implications.
-Numerical checks cover timed-target endpoints, the constraint-at-witness convention,
-touching closed cells, between-sample collisions and swept-body coverage. The
+exercise the notebook's model cells: the reference, deadline relations and the
+selection rule. Numerical checks cover timed-target endpoints, the
+constraint-at-witness convention, touching closed cells, neighbouring time slabs,
+between-sample collisions and box coverage. The
 fresh-kernel notebook is the real-backend integration check; synthetic unit-test
 evidence is never used in the executed scenario.

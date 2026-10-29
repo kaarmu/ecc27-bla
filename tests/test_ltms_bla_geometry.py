@@ -4,8 +4,7 @@ try:
 except ImportError as error:
     raise unittest.SkipTest('optional numerical geometry tests need numpy') from error
 
-from ltms_bla import model as M
-from ltms_bla.checks import boxes_disjoint, minimum_body_gap, reference_coverage
+from ltms_bla.checks import aligned_disjoint, boxes_covered, boxes_disjoint, minimum_body_gap
 
 
 class CorridorGeometryTests(unittest.TestCase):
@@ -27,20 +26,21 @@ class CorridorGeometryTests(unittest.TestCase):
         b[:, 1] = .8
         self.assertAlmostEqual(minimum_body_gap(times, a, times, b, .18), .44)
 
-    def test_reference_coverage_needs_every_swept_box(self):
-        times = np.arange(0, 9.01, .25)
-        rx, ry = np.arange(-2.6, 2.61, .1), np.arange(-1, .21, .1)
-        x0, y0 = M.ENTRY[:2]
-        reserved = np.zeros((len(times), len(rx), len(ry)), bool)
-        for i, t in enumerate(times):
-            a = x0 + M.SPEED*min(t, M.CROSSING)
-            b = x0 + M.SPEED*min(t+.25, M.CROSSING)
-            reserved[i] = ((rx[:, None] >= a-.35) & (rx[:, None] <= b+.35)
-                           & (abs(ry[None, :]-y0) <= .35))
-        self.assertTrue(reference_coverage(reserved, rx, ry, times))
-        # A reference departing one second later is not covered by this reservation.
-        self.assertFalse(reference_coverage(reserved, rx, ry, times, delay=1.))
-        # Presence before the reservation's time zero is never covered.
-        self.assertFalse(reference_coverage(reserved, rx, ry, times, delay=-1.))
-        thin = reserved & (abs(ry[None, None, :]-y0) <= .1)
-        self.assertFalse(reference_coverage(thin, rx, ry, times))
+    def test_box_coverage_needs_every_cell_a_box_meets(self):
+        rx, ry = np.arange(-1, 1.01, .1), np.arange(-1, 1.01, .1)
+        reserved = np.zeros((2, len(rx), len(ry)), bool)
+        reserved[0, 8:13, 8:13] = True  # cells centred on [-0.2, 0.2]^2
+        self.assertTrue(boxes_covered(reserved, rx, ry, [(0, -.1, .1, -.1, .1)]))
+        # A box reaching into the next cell's closure, or on another slab, is not covered.
+        self.assertFalse(boxes_covered(reserved, rx, ry, [(0, -.1, .26, -.1, .1)]))
+        self.assertFalse(boxes_covered(reserved, rx, ry, [(1, -.1, .1, -.1, .1)]))
+
+    def test_shifted_reservations_compare_neighbouring_slabs(self):
+        a = np.zeros((4, 7, 7), bool)
+        a[3, 2, 2] = True
+        b = np.zeros((4, 7, 7), bool)
+        b[0, 2, 2] = True
+        self.assertTrue(aligned_disjoint(a, 0, b, 1, 1.))   # b's slab 0 lands on a's slab 1: two slabs apart
+        self.assertFalse(aligned_disjoint(a, 0, b, 2, 1.))  # neighbouring slabs (2 and 3) count as meeting
+        self.assertFalse(aligned_disjoint(a, 0, b, 3, 1.))  # same slab
+        self.assertTrue(aligned_disjoint(a, 0, b, 5, 1.))   # no common time

@@ -1,4 +1,4 @@
-"""Standalone scientific figure, rendered in the numerical worker environment."""
+"""Standalone Matplotlib figure from the notebook's recorded scenario results."""
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt

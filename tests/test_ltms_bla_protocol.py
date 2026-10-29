@@ -1,25 +1,30 @@
+"""Lifecycle checks on the notebook's own stages; run with the numerical stack."""
 from dataclasses import replace
 from fractions import Fraction as F
-from hashlib import sha256
 from pathlib import Path
 import json
 import tempfile
 import unittest
 
+try:
+    import numpy as np
+except ImportError as error:
+    raise unittest.SkipTest('the notebook stages need numpy; run in the LTMS Python 3.13 environment') from error
+
 import interval_logic as il
 import portion as P
 from protocol import Booking, Certificate, CertifiedOffer, affine_policies, BargainingResult, normalize
 from protocol.companion import load_method_notebook
-from ltms_bla import model as M
 from ltms_bla.bargaining import load_bargain, validate_corridors
 from ltms_bla.records import (SERVICE_CHECKS, Admission, Candidate, CrossingService, CorridorOffer,
                               ServiceAdmission, certify_compatibility, certify_service, commit_exact,
                               implies, refines, snapshot_id, standing)
-from ltms_bla.scenario import load_method, outcome_summary, run_scenario
+from ltms_bla.scenario import file_digest, load_method, outcome_summary, run_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 if not (ROOT/'notebooks'/'protocol.ipynb').exists():
     ROOT = Path.cwd()
+METHOD = load_method(ROOT)
 
 
 def evidence(checks=None, compatibility=None):
@@ -31,54 +36,28 @@ def evidence(checks=None, compatibility=None):
 def offer(service, departure, ledger=(), **overrides):
     # Synthetic certificate data is used only for lifecycle unit checks. Real
     # numerical evidence is exercised by the fresh-kernel integration runner.
-    return CorridorOffer(f'{service.client}-{departure}', service, departure, F(departure+M.LEASE),
-                         snapshot_id(ledger), '', '', evidence(**overrides))
+    return CorridorOffer(f'{service.client}-{departure}', service, METHOD.service_contracts(service)[0],
+                         departure, F(departure+METHOD.LEASE), snapshot_id(ledger), '', '', evidence(**overrides))
 
 
-class SyntheticWorker:
-    """Unit-test data only: overlapping same-route leases conflict, else disjoint.
+def synthetic_base(directory):
+    """Unit-test data only: an eastbound band of cells for the whole horizon.
 
-    Status precedence and offer artifacts follow ltms_bla.worker; no HJ value.
+    Westbound (the rotation by pi) occupies a band two cells away, so opposite
+    directions never meet and same-direction leases meet whenever they overlap.
     """
-    def __init__(self, directory):
-        self.directory = Path(directory)
-        base = self.directory/'base.npz'
-        base.write_bytes(b'synthetic')
-        self.base, self.setup = str(base), dict(base_digest=sha256(b'synthetic').hexdigest())
-
-    def call(self, op, **message):
-        assert op == 'evaluate'
-        service, s = message['service'], message['departure']
-        if M.speed_bound_excludes(s, service['deadline']):
-            return dict(status='PROVED_IMPOSSIBLE', reason='speed bound')
-        if not M.tlt_evidence_applies(s, service['deadline']):
-            return dict(status='UNRESOLVED', reason='window exceeds deadline')
-        comparisons = []
-        for record in message['accepted']:
-            old = json.loads(Path(record['artifact']).read_text())
-            comparisons.append(dict(offer=old['id'], disjoint=old['route'] != service['route']
-                                    or s >= old['end'] or old['departure'] >= s+M.LEASE))
-        checks = dict.fromkeys(SERVICE_CHECKS, True)
-        if not all(c['disjoint'] for c in comparisons):
-            return dict(status='GEOMETRIC_CONFLICT', reason='meets', service=checks, comparisons=comparisons)
-        info = dict(id=message['id'], service=service, departure=s, route=service['route'],
-                    snapshot=message['snapshot'], end=s+M.LEASE, base=self.base,
-                    base_digest=self.setup['base_digest'],
-                    checks=dict(service=checks, compatibility=dict(compatible=True, disjoint_from=comparisons)))
-        path = self.directory/f"offer-{message['id']}.json"
-        path.write_text(json.dumps(info, sort_keys=True))
-        return dict(status='QUALIFIED', artifact=str(path),
-                    artifact_digest=sha256(path.read_bytes()).hexdigest(), info=info)
+    reserved = np.zeros((37, 6, 10), bool)
+    reserved[:, :, 1:4] = True
+    path = Path(directory)/'base.npz'
+    np.savez(path, reserved=reserved)
+    return dict(reserved=reserved, dt=.25, path=str(path), digest=file_digest(path),
+                service_checks=dict.fromkeys(SERVICE_CHECKS[:-1], True), output=str(directory))
 
 
 class CorridorProtocolTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.method = load_method(ROOT)
-
     def run_synthetic(self, directory=None):
         if directory is not None:
-            attempts, ledger = run_scenario(ROOT, SyntheticWorker(directory), self.method)
+            attempts, ledger = run_scenario(ROOT, synthetic_base(directory), METHOD)
             return attempts, ledger, outcome_summary(attempts)
         with tempfile.TemporaryDirectory() as directory:
             return self.run_synthetic(directory)
@@ -132,6 +111,7 @@ class CorridorProtocolTests(unittest.TestCase):
         self.assertIs(E.selected, adapted)
         B = attempts[1]
         self.assertTrue(all(o.service is B['admission'].selected.service for o in B['offers']))
+        self.assertTrue(all(o.access == B['admission'].selected.S_a for o in B['offers']))
         self.assertTrue(all(o.snapshot == B['admission'].snapshot for o in B['offers']))
 
     def test_offers_refine_quotient_and_compose_to_the_task(self):
@@ -163,16 +143,14 @@ class CorridorProtocolTests(unittest.TestCase):
                 validate_corridors((offer(service, 0, compatibility=broken),), {'owner': 1, 'client': 1},
                                    {'owner': 0, 'client': 0}, (0, 10), 3)
         # Service evidence for an ineligible departure does not reach S_a.
-        late = CrossingService('B', 'west', (0, 3), 9)
         with self.assertRaises(ValueError):
-            certify_service(offer(late, 3))
+            certify_service(offer(CrossingService('B', 'west', (0, 3), 9), 3))
 
     def test_failure_meanings_stay_distinct(self):
         service = CrossingService('F', 'east', (0, 1), 9)
-        commitment = standing(())
         def admission(*statuses):
             candidates = tuple(Candidate(s, f'id{s}', dict(status=status)) for s, status in enumerate(statuses))
-            return Admission(None, '', commitment, (ServiceAdmission(service, *[None]*7, candidates),))
+            return Admission(None, '', standing(()), (ServiceAdmission(service, *[None]*7, candidates),))
         self.assertEqual(admission('PROVED_IMPOSSIBLE', 'PROVED_IMPOSSIBLE').failure, 'PROVED-IMPOSSIBLE')
         self.assertEqual(admission('GEOMETRIC_CONFLICT', 'PROVED_IMPOSSIBLE').failure, 'NO-COMPATIBLE-OFFER')
         self.assertEqual(admission('UNRESOLVED', 'PROVED_IMPOSSIBLE').failure, 'UNRESOLVED')
@@ -182,12 +160,11 @@ class CorridorProtocolTests(unittest.TestCase):
         service = CrossingService('B', 'west', (0, 1), 9)
         family = tuple(offer(service, s) for s in service.departures)
         self.assertIs(family[0].service, family[1].service)
-        self.assertEqual(self.method.service_contracts(service),
-                         self.method.service_contracts(family[1].service))
-        invalid = replace(family[1], service=CrossingService('C', 'west', (0, 1), 9))
-        with self.assertRaises(ValueError):
-            validate_corridors((family[0], invalid), {'owner': 1, 'client': 1},
-                                {'owner': 0, 'client': 0}, (0, 10), 3)
+        for invalid in (replace(family[1], service=CrossingService('C', 'west', (0, 1), 9)),
+                        replace(family[1], access=service.access_for(1))):
+            with self.assertRaises(ValueError):
+                validate_corridors((family[0], invalid), {'owner': 1, 'client': 1},
+                                   {'owner': 0, 'client': 0}, (0, 10), 3)
 
     def test_exact_commit_stale_snapshot_and_no_bla_preservation(self):
         service = CrossingService('A', 'east', (0,), 8)
@@ -206,3 +183,32 @@ class CorridorProtocolTests(unittest.TestCase):
         declined = BargainingResult('NO-BLA', None, (), (chosen,))
         self.assertIs(commit_exact((chosen,), declined, ledger, lambda o: None), ledger)
 
+
+class NotebookModelTests(unittest.TestCase):
+    """The notebook's model cells, exercised directly."""
+    def test_declared_reference_fulfils_the_task(self):
+        M = METHOD
+        x, y, *_ = M.reference(M.PRESENCE)
+        self.assertAlmostEqual(x, 1.55)
+        self.assertTrue(M.body_in_lane(y) and M.body_clear(x))
+        self.assertFalse(M.body_clear(M.reference(M.PRESENCE, speed=.35)[0]))
+        self.assertFalse(M.body_in_lane(-.7))
+
+    def test_deadline_relations(self):
+        M = METHOD
+        for s in range(5):
+            for d in range(s+1, s+12):
+                if M.tlt_evidence_applies(s, d):  # [s+7, s+8] ⊆ [s, d] strengthens "clear by d"
+                    self.assertIn(s, M.eligible(CrossingService('X', 'east', (s,), d)))
+        self.assertEqual(M.eligible(CrossingService('X', 'east', (0, 1, 2), 8)), (0, 1))
+        self.assertTrue(M.speed_bound_excludes(20, 22))   # 0.6 * 2 < 3
+        self.assertFalse(M.speed_bound_excludes(20, 25))  # 0.6 * 5 >= 3
+        self.assertFalse(M.tlt_evidence_applies(30, 37))
+
+    def test_selection_reads_only_the_promise(self):
+        M = METHOD
+        service = CrossingService('X', 'east', (0, 1), 9)
+        self.assertEqual(M.select_departure(service, {0, 1}), 0)
+        self.assertEqual(M.select_departure(service, {1}), 1)
+        self.assertIsNone(M.select_departure(service, set()))
+        self.assertIsNone(M.select_departure(CrossingService('X', 'east', (0, 3), 9), {3}))

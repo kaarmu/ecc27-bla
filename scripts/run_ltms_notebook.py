@@ -1,11 +1,32 @@
-"""Execute ltms_blas.ipynb in a fresh coordinator kernel, preserving worker logs."""
+"""Execute ltms_blas.ipynb in a fresh Python 3.13 kernel with the numerical stack.
+
+JAX has no Python 3.14 wheel on Intel macOS, so this notebook's kernel runs
+outside the >=3.14 project environment: by default through ``uv run
+--no-project --python 3.13`` with the packages below, or with the interpreter
+named by ``LTMS_PYTHON``. The runner itself may run in either environment.
+"""
 import argparse
+import os
 from pathlib import Path
-import sys
+import shutil
 
 import nbformat
 from nbclient import NotebookClient
 from jupyter_client import KernelManager
+
+PACKAGES = ('pyspect[hj_reachability]==1.2', 'pillow', 'matplotlib>=3.10', 'portion>=2.6.1',
+            'plotly', 'ipykernel')
+
+
+def kernel_command():
+    if os.environ.get('LTMS_PYTHON'):
+        return [os.environ['LTMS_PYTHON'], '-m', 'ipykernel_launcher', '-f', '{connection_file}']
+    uv = shutil.which('uv')
+    if uv is None:
+        raise SystemExit('install uv, or set LTMS_PYTHON to a Python 3.13 with: ' + ' '.join(PACKAGES))
+    return [uv, 'run', '--no-project', '--python', '3.13',
+            *(arg for package in PACKAGES for arg in ('--with', package)),
+            'python', '-m', 'ipykernel_launcher', '-f', '{connection_file}']
 
 
 def main():
@@ -19,14 +40,13 @@ def main():
     path = root/'notebooks'/'ltms_blas.ipynb'
     notebook = nbformat.read(path, as_version=4)
     manager = KernelManager(kernel_name='python3')
-    manager.kernel_spec.argv = [sys.executable, '-m', 'ipykernel_launcher', '-f', '{connection_file}']
-    client = NotebookClient(notebook, km=manager, timeout=args.timeout,
+    manager.kernel_spec.argv = kernel_command()
+    client = NotebookClient(notebook, km=manager, timeout=args.timeout, startup_timeout=300,
                             resources={'metadata': {'path': str(root if args.cwd == 'root' else root/'notebooks')}})
-    env = None
+    env = {**os.environ, 'MPLBACKEND': 'Agg'}
     if args.output:
-        import os
-        env = {**os.environ, 'LTMS_OUTPUT': str(args.output.resolve())}
-    client.execute(cleanup_kc=True, **({} if env is None else {'env': env}))
+        env['LTMS_OUTPUT'] = str(args.output.resolve())
+    client.execute(cleanup_kc=True, env=env)
     if args.save:
         for cell in notebook.cells:
             cell.metadata.pop('execution', None)

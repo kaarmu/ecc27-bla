@@ -1,79 +1,67 @@
-"""Worker transport, artifact checks and the serial runner for the LTMS notebook.
+"""Caching, artifact storage, the method loader and the serial runner.
 
-The protocol stages (contracts, admission, offers, commitment) are defined in
-notebooks/ltms_blas.ipynb. ``load_method`` compiles its tagged definition
+The model, environment, numerical construction and protocol stages are defined
+in notebooks/ltms_blas.ipynb. ``load_method`` compiles its tagged definition
 cells verbatim, so the runner and the notebook execute one implementation.
 """
 from dataclasses import asdict
 from hashlib import sha256
 from pathlib import Path
+from time import perf_counter
 from types import SimpleNamespace
 import json
-import os
-import shutil
-import subprocess
+
+import numpy as np
 
 from .records import digest, snapshot_id, standing
 
-METHOD = ('service_contracts', 'qualify', 'admit', 'generate', 'commit', 'attempt',
-          'bargain', 'REQUESTS', 'PRICES', 'ROUND_BUDGET')
+
+def file_digest(path):
+    return sha256(Path(path).read_bytes()).hexdigest()
 
 
-class NumericalWorker:
-    def __init__(self, root, output, worker_python=None):
-        root = Path(root).resolve()
-        self.output = Path(output).resolve()
-        self.output.mkdir(parents=True, exist_ok=True)
-        worker_python = worker_python or os.environ.get('LTMS_WORKER_PYTHON')
-        if worker_python:
-            command = [str(worker_python), '-m', 'ltms_bla.worker']
-        else:
-            uv = shutil.which('uv')
-            if uv is None:
-                raise RuntimeError('set LTMS_WORKER_PYTHON to a pyspect-enabled Python, or install uv')
-            command = [uv, 'run', '--no-project', '--python', '3.13',
-                       '--with', 'pyspect[hj_reachability]==1.2', '--with', 'pillow',
-                       '--with', 'matplotlib>=3.10',
-                       'python', '-m', 'ltms_bla.worker']
-        env = dict(os.environ)
-        env['PYTHONPATH'] = os.pathsep.join((str(Path(__file__).resolve().parents[1]), str(root/'src')))
-        env['MPLBACKEND'] = 'Agg'  # do not inherit the coordinator kernel's inline backend
-        self.log = (self.output/'worker.log').open('w')
-        self.process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, stderr=self.log, text=True, bufsize=1)
+def array_digest(array):
+    array = np.ascontiguousarray(array)
+    return sha256(json.dumps([str(array.dtype), array.shape]).encode()+array.tobytes()).hexdigest()
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, *exc):
-        self.close()
+def source_digest(module):
+    """Digest of a package's Python sources, e.g. the PDE kernels a cache depends on."""
+    files = sorted(Path(module.__file__).parent.glob('*.py'))
+    return sha256(b''.join(p.name.encode()+p.read_bytes() for p in files)).hexdigest()
 
-    def prepare(self):
-        """Compute or verify-and-reuse the base artifacts; kept for offer identities."""
-        self.setup = self.call(op='prepare', output=str(self.output))
-        return self.setup
 
-    def call(self, **message):
-        self.process.stdin.write(json.dumps(message)+'\n')
-        self.process.stdin.flush()
-        line = self.process.stdout.readline()
-        if not line:
-            raise RuntimeError(f'numerical worker stopped; see {self.output / "worker.log"}')
-        reply = json.loads(line)
-        if not reply['ok']:
-            raise RuntimeError(reply['error'])
-        return reply['result']
+def cached(directory, name, inputs, compute):
+    """Arrays computed from exactly these inputs.
 
-    def close(self):
-        if self.process.poll() is None:
-            self.process.stdin.close()
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.terminate()
-                self.process.wait(timeout=10)
-        self.process.stdout.close()
-        self.log.close()
+    Reuses ``<name>-<key>.npz`` only after checking its recorded digest; the
+    key hashes the JSON ``inputs``, so changed inputs never reuse old arrays.
+    Returns the arrays and a record with the path, digest and timing.
+    """
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory/f'{name}-{digest(inputs)[:20]}.npz'
+    record_path = path.with_suffix('.json')
+    if path.exists() and record_path.exists():
+        record = json.loads(record_path.read_text())
+        if file_digest(path) != record['digest']:
+            raise ValueError(f'{path.name} changed after it was stored')
+        with np.load(path, allow_pickle=False) as stored:
+            return {k: stored[k] for k in stored.files}, {**record, 'cache_hit': True}
+    started = perf_counter()
+    arrays = compute()
+    seconds = perf_counter()-started
+    np.savez_compressed(path, **arrays)
+    record = dict(name=name, inputs=inputs, path=str(path), digest=file_digest(path), seconds=seconds)
+    record_path.write_text(json.dumps(record, indent=2, allow_nan=False))
+    return arrays, {**record, 'cache_hit': False}
+
+
+def write_artifact(directory, info):
+    """Store one offer's exact promise and evidence; returns (path, digest)."""
+    path = Path(directory)/f"offer-{info['id']}.json"
+    path.write_text(json.dumps(info, sort_keys=True, indent=2, allow_nan=False))
+    return str(path), file_digest(path)
 
 
 def artifact_record(offer):
@@ -82,7 +70,7 @@ def artifact_record(offer):
 
 def verify_artifact(offer):
     path = Path(offer.artifact)
-    if sha256(path.read_bytes()).hexdigest() != offer.artifact_digest:
+    if file_digest(path) != offer.artifact_digest:
         raise ValueError('offer artifact changed after generation')
     info = json.loads(path.read_text())
     if (info['id'] != offer.id or info['snapshot'] != offer.snapshot
@@ -90,7 +78,7 @@ def verify_artifact(offer):
             or digest(info['service']) != digest(asdict(offer.service))
             or info['checks'] != offer.evidence):
         raise ValueError('artifact does not describe the exact offered promise')
-    if sha256(Path(info['base']).read_bytes()).hexdigest() != info['base_digest']:
+    if file_digest(info['base']) != info['base_digest']:
         raise ValueError('full numerical corridor changed after generation')
 
 
@@ -111,22 +99,22 @@ def load_method(root):
     namespace = {'__name__': '_ltms_method', 'ROOT': Path(root).resolve()}
     for name, source in definition_cells(root):
         exec(compile(source, name, 'exec'), namespace)
-    return SimpleNamespace(**{name: namespace[name] for name in METHOD})
+    return SimpleNamespace(**{k: v for k, v in namespace.items() if not k.startswith('__')})
 
 
-def run_scenario(root, worker, method=None):
+def run_scenario(root, base, method=None):
     """Serial A–E attempts with the notebook's own stages and inputs."""
     method = load_method(root) if method is None else method
     ledger, attempts = (), []
     for spec in method.REQUESTS:
-        record = method.attempt(spec, ledger, worker)
+        record = method.attempt(spec, ledger, base)
         attempts.append(record)
         ledger = record['result'].ledger
     return attempts, ledger
 
 
 def outcome_summary(attempts):
-    """Outcome, selected departure, price, offer family and retained promises."""
+    """Outcome, offer family, selected departure, price and retained promises."""
     rows = []
     for a in attempts:
         agreement = a['negotiation'].agreement
@@ -143,7 +131,7 @@ def attempt_record(a):
     accepted = result.agreement
     return dict(
         client=a['request'].client, status=result.status, snapshot=admission.snapshot,
-        services=[dict(service=asdict(s.service), key=s.service.key, eligible=list(s.service.eligible),
+        services=[dict(service=asdict(s.service), key=s.service.key,
                        sufficient_access=str(s.S_a), client_contract=str(s.client),
                        quotient=str(s.quotient), obligations=str(s.obligations),
                        candidates=[dict(departure=c.departure, id=c.offer_id, status=c.status,
@@ -163,15 +151,13 @@ def attempt_record(a):
             exact_object=accepted.offer is negotiation.agreement.offer))
 
 
-def build_report(root, attempts, ledger, setup, refinement, worker):
-    records = [attempt_record(a) for a in attempts]
-    final = worker.call(op='final', accepted=[artifact_record(b.offer) for b in ledger], attempts=records)
-    return dict(attempts=records,
+def build_report(root, attempts, ledger, final, numerics):
+    return dict(attempts=[attempt_record(a) for a in attempts],
                 accepted=[dict(id=b.offer.id, client=b.offer.service.client, departure=b.offer.departure,
                                price=str(b.price), contract=str(b.contract), **artifact_record(b.offer))
                           for b in ledger],
-                standing_contract=str(standing(ledger)), final=final, setup=setup, refinement=refinement,
+                standing_contract=str(standing(ledger)), final=final, numerics=numerics,
                 method_source=method_digest(root),
-                bargaining_source=sha256((Path(root)/'notebooks'/'protocol.ipynb').read_bytes()).hexdigest(),
+                bargaining_source=file_digest(Path(root)/'notebooks'/'protocol.ipynb'),
                 claim='Illustrative numerical BLA scenario with exact nominal straight-motion clients; '
                       'no robustness certificate.')

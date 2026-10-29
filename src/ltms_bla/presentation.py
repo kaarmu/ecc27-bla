@@ -25,6 +25,8 @@ MEANINGS = {
 
 def latex(value, symbols=None):
     """protocol.fmt, with proposition names replaced by display symbols."""
+    if getattr(value, 'shape', None) == ():  # NumPy scalar
+        value = value.item()
     if isinstance(value, (tuple, list)):
         return '(' + ', '.join(latex(v, symbols) for v in value) + ')'
     if isinstance(value, float):

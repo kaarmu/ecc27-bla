@@ -1,8 +1,8 @@
 """Immutable, dependency-light coordinator records; prices stay outside contracts.
 
-Predicates are Boolean atoms whose meanings are fixed in ``ltms_bla.model``:
-Boolean normalization cannot infer containment between different atoms, so
-geometric facts are recorded as separate evidence.
+Predicates are Boolean atoms whose meanings are fixed in the notebook's model
+cells. Boolean normalization cannot infer containment between different atoms,
+so geometric facts are recorded as separate evidence.
 """
 from dataclasses import dataclass
 from fractions import Fraction as F
@@ -11,7 +11,6 @@ import json
 
 import interval_logic as il
 from protocol import Contract, normalize
-from . import model as M
 
 SERVICE_CHECKS = ('entry_inside', 'rollout_inside', 'road_ok', 'clear_ok', 'input_ok',
                   'reference_covered', 'tlt_window_within_deadline')
@@ -45,21 +44,12 @@ class CrossingService:
         return digest(dict(client=self.client, route=self.route,
                            departures=self.departures, deadline=self.deadline))[:16]
 
-    @property
-    def eligible(self):
-        return M.eligible_departures(self.departures, self.deadline)
-
     def access_for(self, departure):
         if departure not in self.departures:
             raise ValueError('departure is outside selected service')
         # a_s, owner-only: the allocation covers this client's reference body
         # throughout its presence interval [s, s+7].
         return il.Proposition(f'a_{self.client}_{self.route}_{departure}')
-
-    @property
-    def access(self):
-        """S_a: the finite disjunction over eligible departures (False if none)."""
-        return il.Or(self.access_for(s) for s in self.eligible)
 
     @property
     def rule(self):
@@ -151,6 +141,7 @@ class Admission:
 class CorridorOffer:
     id: str
     service: CrossingService
+    access: il.Formula  # the selected service's fixed S_a, shared by the whole family
     departure: int
     end: F
     snapshot: str
@@ -231,7 +222,7 @@ def certify_service(offer):
     missing = [k for k in SERVICE_CHECKS if service.get(k) is not True]
     if missing:
         raise ValueError(f'offer lacks service evidence: {", ".join(missing)}')
-    if not implies(offer.contract.guarantee, offer.service.access):
+    if not implies(offer.contract.guarantee, offer.access):
         raise ValueError('offer does not imply the fixed sufficient-access predicate')
 
 

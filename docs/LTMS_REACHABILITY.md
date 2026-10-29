@@ -35,6 +35,8 @@ distribution into Python 3.13. `GridSpec`, `Axis`, `TimeWindow` and `WindowPolic
 can be imported by `protocol` without NumPy/JAX/pyspect. Running the numerical
 planner **inside** the 3.14 protocol process on that Mac still needs a compatible
 backend environment; a cross-process protocol adapter is not included here.
+The LTMS BLA notebook therefore runs entirely in a Python 3.13 kernel; the
+protocol packages run there unchanged (see `LTMS_BLA_EXAMPLE.md`).
 Use a clean shell without the old catkin Python path, which can shadow the
 current `hj_reachability` dependency. Pillow is included because pyspect's
 imports use it.

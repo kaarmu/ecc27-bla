@@ -13,8 +13,8 @@ def validate_corridors(offers, targets, minima, prices, round_budget):
         certify_template(offer)
     if len({o.id for o in offers}) != len(offers):
         raise ValueError('duplicate offer identities')
-    if len({(o.service.key, o.snapshot) for o in offers}) > 1:
-        raise ValueError('offers must share one selected service and snapshot')
+    if len({(o.service.key, o.access, o.snapshot) for o in offers}) > 1:
+        raise ValueError('offers must share one selected service, client model and snapshot')
     # Reuse all numeric/budget validation. Only the charging-specific booking
     # eligibility check is replaced; no corridor is cast into a Booking.
     return validate_bargaining((), targets, minima, prices, round_budget)
