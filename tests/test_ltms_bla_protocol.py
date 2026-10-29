@@ -190,10 +190,21 @@ class NotebookModelTests(unittest.TestCase):
         M = METHOD
         start, end = M.reference(0), M.reference(M.PRESENCE)
         self.assertAlmostEqual(end[0], 1.55)
-        self.assertTrue(M.in_lane(start) and M.in_lane(end) and M.in_zone(end, M.EXIT_ZONE))
-        self.assertFalse(M.in_zone(M.reference(M.PRESENCE, speed=.35), M.EXIT_ZONE))
-        self.assertFalse(M.in_road((-1.6, -.9, 0., M.SPEED)))
-        self.assertTrue(M.in_road((0., .9, 1., M.SPEED)))  # the centre admits any heading
+        self.assertTrue(M.inside(start, M.LANE) and M.inside(end, M.LANE, M.EXIT_ZONE))
+        self.assertFalse(M.inside(M.reference(M.PRESENCE, speed=.35), M.EXIT_ZONE))
+        self.assertFalse(M.inside((-1.6, -.9, 0., M.SPEED), M.LANE))
+
+    def test_reference_solves_the_solver_model(self):
+        try:
+            from pyspect.systems.hj_reachability import Bicycle4D
+        except ImportError:
+            self.skipTest('needs pyspect[hj_reachability]')
+        M = METHOD
+        solver = Bicycle4D(**M.CONTROLS, wheelbase=M.WHEELBASE)
+        taus = np.linspace(0, M.PRESENCE, 29)
+        path = np.array([M.reference(t) for t in taus])
+        rates = np.array([np.asarray(solver(z, np.zeros(2), np.zeros(4), 0.)) for z in path[:-1]])
+        np.testing.assert_allclose(np.diff(path, axis=0), np.diff(taus)[:, None]*rates, atol=1e-6)
 
     def test_deadline_relations(self):
         M = METHOD
@@ -205,11 +216,3 @@ class NotebookModelTests(unittest.TestCase):
         self.assertTrue(M.speed_bound_excludes(20, 22))   # 0.6 * 2 < 3
         self.assertFalse(M.speed_bound_excludes(20, 25))  # 0.6 * 5 >= 3
         self.assertFalse(M.tlt_evidence_applies(30, 37))
-
-    def test_selection_reads_only_the_promise(self):
-        M = METHOD
-        service = CrossingService('X', 'east', (0, 1), 9)
-        self.assertEqual(M.select_departure(service, {0, 1}), 0)
-        self.assertEqual(M.select_departure(service, {1}), 1)
-        self.assertIsNone(M.select_departure(service, set()))
-        self.assertIsNone(M.select_departure(CrossingService('X', 'east', (0, 3), 9), {3}))

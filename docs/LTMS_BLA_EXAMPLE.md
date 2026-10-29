@@ -44,14 +44,12 @@ and the fixed client policy), **[numerical]** (TLT and corridor membership on th
 declared grid) or **[independent]** (nominal execution checks and analytic bounds).
 
 1. **Model.** Notebook cells define the vehicle, a point-mass kinematic bicycle
-   (`bicycle4d`, steering-angle and acceleration bounds, chart), the road and zones
-   (`in_lane`, `in_centre`, `in_road`, `in_zone`) and the fixed client (entry state,
-   `reference`, presence and lease,
-   `eligible`, the deadline relation, the speed bound and `select_departure`), with a
-   predicate table for $H_\kappa$, $a_s$, $S_a$, $B_j$ and $S_u$. A check shows that a
-   covered eligible reference yields access compliance, road compliance and timely
-   arrival in the exit zone, that slower, late or out-of-lane references fail, and that
-   `bicycle4d` equals the solver's own Bicycle4D.
+   (steering-angle and acceleration bounds, chart; the solver's Bicycle4D), the road
+   as boxes over named axes (`LANE`, the zones, `inside`; the same boxes become level
+   sets in §2) and the fixed client (entry state, `reference`, presence and lease,
+   `eligible`, the deadline relation and the speed bound), with a predicate table for
+   $H_\kappa$, $a_s$, $S_a$, $B_j$ and $S_u$. The reference is checked in `LANE` and
+   ending in `EXIT_ZONE`, which are subsets of `road_e` and `exit_e`.
 2. **Environment, task and corridor.** Notebook cells define the grid, build the
    eastbound map regions from level-set boxes and hyperplanes (asserted equal to the
    legacy map); with a point vehicle these are exactly the task sets. They
@@ -178,8 +176,8 @@ against a small synthetic reservation: scenario outcomes, prices and departures,
 quotient/conjunction identities, service adaptation, refinement and composition,
 rejection of false evidence, distinct failure meanings, exact identity, stale
 snapshots and parity with the charging bargaining implementation. Model checks
-exercise the notebook's model cells: the reference, deadline relations and the
-selection rule. Numerical checks cover timed-target endpoints, the
+exercise the notebook's model cells: the reference (in the lane, reaching the exit
+zone, solving the solver's Bicycle4D) and the deadline relations. Numerical checks cover timed-target endpoints, the
 constraint-at-witness convention, touching closed cells, neighbouring time slabs,
 between-sample collisions and box coverage. The
 fresh-kernel notebook is the real-backend integration check; synthetic unit-test
