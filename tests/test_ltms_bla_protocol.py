@@ -188,11 +188,12 @@ class NotebookModelTests(unittest.TestCase):
     """The notebook's model cells, exercised directly."""
     def test_declared_reference_fulfils_the_task(self):
         M = METHOD
-        x, y, *_ = M.reference(M.PRESENCE)
-        self.assertAlmostEqual(x, 1.55)
-        self.assertTrue(M.body_in_lane(y) and M.body_clear(x))
-        self.assertFalse(M.body_clear(M.reference(M.PRESENCE, speed=.35)[0]))
-        self.assertFalse(M.body_in_lane(-.7))
+        start, end = M.reference(0), M.reference(M.PRESENCE)
+        self.assertAlmostEqual(end[0], 1.55)
+        self.assertTrue(M.in_lane(start) and M.in_lane(end) and M.in_zone(end, M.EXIT_ZONE))
+        self.assertFalse(M.in_zone(M.reference(M.PRESENCE, speed=.35), M.EXIT_ZONE))
+        self.assertFalse(M.in_road((-1.6, -.9, 0., M.SPEED)))
+        self.assertTrue(M.in_road((0., .9, 1., M.SPEED)))  # the centre admits any heading
 
     def test_deadline_relations(self):
         M = METHOD

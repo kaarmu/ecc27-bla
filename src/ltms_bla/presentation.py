@@ -80,7 +80,7 @@ def plot_scenario(report):
     from plotly.subplots import make_subplots
     figure = make_subplots(rows=2, cols=2, specs=[[{}, {}], [{'colspan': 2}, None]],
                            subplot_titles=('Accepted crossings and reserved lane bands',
-                                           'TLT root at t=0, h=0, d=0, v=0.45',
+                                           'TLT root at t=0, h=0, v=0.45',
                                            'Offered lease intervals and exact accepted choices'),
                            vertical_spacing=.17, row_heights=[.65, .35])
     colors = {'A': '#0072B2', 'B': '#D55E00', 'C': '#888888', 'D': '#CC79A7', 'E': '#009E73'}

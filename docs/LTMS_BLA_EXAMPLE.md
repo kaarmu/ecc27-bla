@@ -22,8 +22,8 @@ uv pip install --python .venv-ltms 'pyspect[hj_reachability]==1.2' pillow \
 
 Do not source the legacy catkin workspace.
 
-The first run performs real Bicycle5D HJ integration (the TLT, the four passes and a
-half-step refinement); it takes several minutes and substantial memory. Each solve is
+The first run performs real Bicycle4D HJ integration (the TLT, the four passes and a
+half-step refinement); it takes about a minute. Each solve is
 stored by `ltms_bla.scenario.cached` under a key built from digests of its exact input
 arrays, the grid and dynamics fingerprint, the `ltms_reachability` sources, package
 versions and an artifact format number. The stored file's digest is verified before
@@ -39,25 +39,26 @@ uv run --group notebooks python scripts/run_ltms_notebook.py --output /tmp/ltms-
 
 The notebook is an executable derivation in the style of `protocol.ipynb`. Each
 claim is labelled by its evidence strength: **[algebra]** (contract identities by
-Boolean normalization), **[semantic]** (implications from reference/body containment
+Boolean normalization), **[semantic]** (implications from reference containment
 and the fixed client policy), **[numerical]** (TLT and corridor membership on the
 declared grid) or **[independent]** (nominal execution checks and analytic bounds).
 
-1. **Model.** Notebook cells define the vehicle (`bicycle5d`, control bounds, chart,
-   body disk), the workspace (lane, managed square, goal, `body_in_lane`,
-   `body_clear`) and the fixed client (entry state, `reference`, presence and lease,
+1. **Model.** Notebook cells define the vehicle, a point-mass kinematic bicycle
+   (`bicycle4d`, steering-angle and acceleration bounds, chart), the road and zones
+   (`in_lane`, `in_centre`, `in_road`, `in_zone`) and the fixed client (entry state,
+   `reference`, presence and lease,
    `eligible`, the deadline relation, the speed bound and `select_departure`), with a
    predicate table for $H_\kappa$, $a_s$, $S_a$, $B_j$ and $S_u$. A check shows that a
    covered eligible reference yields access compliance, road compliance and timely
-   full-body clearance, that slower, late or off-centre references fail, and that
-   `bicycle5d` equals the solver's own Bicycle5D.
+   arrival in the exit zone, that slower, late or out-of-lane references fail, and that
+   `bicycle4d` equals the solver's own Bicycle4D.
 2. **Environment, task and corridor.** Notebook cells define the grid, build the
    eastbound map regions from level-set boxes and hyperplanes (asserted equal to the
-   legacy map), and state which full-body facts the reference-point sets imply. They
+   legacy map); with a point vehicle these are exactly the task sets. They
    build the time-masked TLT for `road_e U_[7,8] exit_e` and realize it, run the four
    LTMS passes (pass 2 is pass 1), intersect with the lane strip, check the full
-   five-state entry state and the reference rollout, and project and inflate the tube
-   into the reservation, checking swept reference-body coverage. The local window
+   four-state entry state and the reference rollout, and project and inflate the tube
+   into the reservation, checking that the reference path lies in it. The local window
    $[7,8]$ is a sufficient strengthening of "clear by $d$" when $s+8\le d$;
    otherwise the template is `UNRESOLVED`.
 3. **Contracts, admission and offers.** Cells tagged `definitions` hold the method:
@@ -65,7 +66,7 @@ declared grid) or **[independent]** (nominal execution checks and analytic bound
    `attempt`, and the scenario inputs.
    Admission retains $C_{\rm client}$, $R_{\rm task}$, $Q$, $C_{\rm cmt}$ and
    $C_{\rm cmt}^{+}$ for each tried service and asserts their identities. Each
-   template is qualified by *service evidence* (swept reference body inside the
+   template is qualified by *service evidence* (reference path inside the
    reservation, then the algebraic implication $K_\kappa\Rightarrow S_a$) and,
    separately, *compatibility evidence* (disjoint full space–time reservations, an
    allocation witness for $L\land H_\kappa$).
@@ -100,7 +101,7 @@ Template statuses keep their meanings: `QUALIFIED`, `GEOMETRIC_CONFLICT` (templa
 rejected), `UNRESOLVED` (numerical evidence does not apply) and `PROVED_IMPOSSIBLE`
 (independent bound). An empty family is not physical impossibility.
 
-`ltms_reachability` supplies the copied four-way geometry, Bicycle5D adapter,
+`ltms_reachability` supplies the copied four-way geometry,
 four LTMS passes and actual pyspect constrained-until TLT. `protocol.Contract`
 and `normalize` derive the quotient and fixed-service implication. The actual
 `bargain` function body is loaded from the trusted `protocol.ipynb` definition
@@ -126,34 +127,32 @@ or concurrent allocation.
 
 ## Mathematical scope
 
-The plant is Bicycle5D with an eastbound route-local heading chart; westbound
-uses its rotation by pi. The grid is `(37,31,61,9,5,7)` over
-`(t,x,y,h,steering,speed)`. Nonperiodic local heading, steering and speed bounds
-and smaller control bounds are declared in the notebook and report. This is
-not the legacy global-grid baseline. One stored float32 tube occupies 84 MiB.
+The plant is pyspect's Bicycle4D, a kinematic bicycle with state `(x,y,h,v)` and
+steering angle and acceleration as inputs, on an eastbound route-local heading chart;
+westbound uses its rotation by pi. Vehicles are points: no body size enters the
+lane, exit, reservations or separation checks. The grid is `(37,31,61,9,7)` over
+`(t,x,y,h,speed)`. This is not the legacy global-grid baseline.
 
-The fixed client library consists of straight nominal references with zero
-steering rate and acceleration from the specified full entry state. Under
-perfect initial state/dynamics, each reference solves the Bicycle5D equations
-and clears by its declared time. Sufficient access is a finite disjunction of
-whole-reference body-coverage predicates, fixed before filtering the family
-against standing commitments. The offer promises its complete corridor
-reservation plus the geometrically implied reference access. Because Boolean
-normalization cannot infer containment between different atoms, the containment
-evidence is checked before the algebraic implication, and compatibility is
-checked separately.
+The fixed client library consists of straight nominal references with zero inputs
+from the specified full entry state. Under perfect initial state/dynamics, each
+reference solves the Bicycle4D equations, stays in the lane and is in the exit zone
+by its declared time. Sufficient access is a finite disjunction of whole-reference
+coverage predicates, fixed before filtering the family against standing
+commitments. The offer promises its complete corridor reservation plus the
+geometrically implied reference access. Because Boolean normalization cannot infer
+containment between different atoms, the containment evidence is checked before
+the algebraic implication, and compatibility is checked separately.
 
-The four-pass output is intersected with a narrow straight lane strip; the strip
-plus the body radius lies inside the lane. A single concrete reference is checked
-inside this conjunction, not assembled from independent temporal witnesses. The
-road/goal TLT is an independent task-feasibility check: it does not check offer
-allocations, and its witness is not the reference controller. The cropped corridor
-is not advertised as a controlled-invariant set for arbitrary inputs. Reservations
-cover the full sampled corridor projection with conservative closed-cell, body and
-time-slab padding; the reference's complete swept-body boxes are independently
-checked. Nominal pairwise body separation is minimized analytically over each
-common straight-motion interval. A native TLT entry check is also repeated at half
-the temporal grid step.
+The four-pass output is intersected with a narrow straight strip of the lane. A
+single concrete reference is checked inside this conjunction, not assembled from
+independent temporal witnesses. The road/exit TLT evaluates the task's own sets
+as an independent feasibility check: it does not check offer allocations, and its
+witness is not the reference controller. The cropped corridor is not advertised as
+a controlled-invariant set for arbitrary inputs. Reservations cover the full
+sampled corridor projection with closed-cell and time-slab padding; the reference
+path is independently checked inside them. Nominal pairwise separation is
+minimized analytically over each common straight-motion interval. A native TLT
+entry check is also repeated at half the temporal grid step.
 
 These results support the declared finite, nominal example. They do not prove
 general feedback enforcement, uncertain tracking, complete offer coverage or

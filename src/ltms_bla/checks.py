@@ -41,7 +41,8 @@ def boxes_covered(reserved, rx, ry, boxes):
     return True
 
 
-def minimum_body_gap(first_times, first_states, second_times, second_states, radius):
+def minimum_separation(first_times, first_states, second_times, second_states):
+    """Minimum distance between two point vehicles over their common time."""
     start, stop = max(first_times[0], second_times[0]), min(first_times[-1], second_times[-1])
     if start > stop:
         return float('inf')
@@ -53,4 +54,4 @@ def minimum_body_gap(first_times, first_states, second_times, second_states, rad
     bv = (second_states[-1, :2]-second_states[0, :2])/(second_times[-1]-second_times[0])
     delta, velocity = a0-b0, av-bv
     tau = 0 if velocity@velocity == 0 else np.clip(-(delta@velocity)/(velocity@velocity), 0, stop-start)
-    return float(np.linalg.norm(delta+tau*velocity)-2*radius)
+    return float(np.linalg.norm(delta+tau*velocity))

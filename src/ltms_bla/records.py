@@ -12,7 +12,7 @@ import json
 import interval_logic as il
 from protocol import Contract, normalize
 
-SERVICE_CHECKS = ('entry_inside', 'rollout_inside', 'road_ok', 'clear_ok', 'input_ok',
+SERVICE_CHECKS = ('entry_inside', 'rollout_inside', 'road_ok', 'exit_ok', 'input_ok',
                   'reference_covered', 'tlt_window_within_deadline')
 
 
@@ -47,18 +47,18 @@ class CrossingService:
     def access_for(self, departure):
         if departure not in self.departures:
             raise ValueError('departure is outside selected service')
-        # a_s, owner-only: the allocation covers this client's reference body
-        # throughout its presence interval [s, s+7].
+        # a_s, owner-only: the allocation contains this client's reference
+        # position throughout its presence interval [s, s+7].
         return il.Proposition(f'a_{self.client}_{self.route}_{departure}')
 
     @property
     def rule(self):
-        """B_j: the client's body stays in its allocation while present."""
+        """B_j: the client's position stays in its allocation while present."""
         return il.Proposition(f'B_{self.client}')
 
     @property
     def task_atom(self):
-        """S_u(theta): road-compliant full-body clearance by the deadline."""
+        """S_u(theta): stay on road_e until reaching exit_e, by the deadline."""
         return il.Proposition(f'Su_{self.client}_{self.route}_{self.deadline}')
 
     @property

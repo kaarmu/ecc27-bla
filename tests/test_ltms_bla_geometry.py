@@ -4,7 +4,7 @@ try:
 except ImportError as error:
     raise unittest.SkipTest('optional numerical geometry tests need numpy') from error
 
-from ltms_bla.checks import aligned_disjoint, boxes_covered, boxes_disjoint, minimum_body_gap
+from ltms_bla.checks import aligned_disjoint, boxes_covered, boxes_disjoint, minimum_separation
 
 
 class CorridorGeometryTests(unittest.TestCase):
@@ -22,9 +22,9 @@ class CorridorGeometryTests(unittest.TestCase):
         times = np.array([0., 2.])
         a = np.array([[-1., 0.], [1., 0.]])
         b = np.array([[1., 0.], [-1., 0.]])
-        self.assertAlmostEqual(minimum_body_gap(times, a, times, b, .18), -.36)
+        self.assertAlmostEqual(minimum_separation(times, a, times, b), 0.)  # they meet at t=1
         b[:, 1] = .8
-        self.assertAlmostEqual(minimum_body_gap(times, a, times, b, .18), .44)
+        self.assertAlmostEqual(minimum_separation(times, a, times, b), .8)
 
     def test_box_coverage_needs_every_cell_a_box_meets(self):
         rx, ry = np.arange(-1, 1.01, .1), np.arange(-1, 1.01, .1)
