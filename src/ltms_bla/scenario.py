@@ -1,4 +1,4 @@
-"""Caching, artifact storage, the method loader and the serial runner.
+"""Artifact storage, the method loader and the serial runner.
 
 The model, environment, numerical construction and protocol stages are defined
 in notebooks/ltms_blas.ipynb. ``load_method`` compiles its tagged definition
@@ -7,54 +7,14 @@ cells verbatim, so the runner and the notebook execute one implementation.
 from dataclasses import asdict
 from hashlib import sha256
 from pathlib import Path
-from time import perf_counter
 from types import SimpleNamespace
 import json
-
-import numpy as np
 
 from .records import digest, snapshot_id, standing
 
 
 def file_digest(path):
     return sha256(Path(path).read_bytes()).hexdigest()
-
-
-def array_digest(array):
-    array = np.ascontiguousarray(array)
-    return sha256(json.dumps([str(array.dtype), array.shape]).encode()+array.tobytes()).hexdigest()
-
-
-def source_digest(module):
-    """Digest of a package's Python sources, e.g. the PDE kernels a cache depends on."""
-    files = sorted(Path(module.__file__).parent.glob('*.py'))
-    return sha256(b''.join(p.name.encode()+p.read_bytes() for p in files)).hexdigest()
-
-
-def cached(directory, name, inputs, compute):
-    """Arrays computed from exactly these inputs.
-
-    Reuses ``<name>-<key>.npz`` only after checking its recorded digest; the
-    key hashes the JSON ``inputs``, so changed inputs never reuse old arrays.
-    Returns the arrays and a record with the path, digest and timing.
-    """
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory/f'{name}-{digest(inputs)[:20]}.npz'
-    record_path = path.with_suffix('.json')
-    if path.exists() and record_path.exists():
-        record = json.loads(record_path.read_text())
-        if file_digest(path) != record['digest']:
-            raise ValueError(f'{path.name} changed after it was stored')
-        with np.load(path, allow_pickle=False) as stored:
-            return {k: stored[k] for k in stored.files}, {**record, 'cache_hit': True}
-    started = perf_counter()
-    arrays = compute()
-    seconds = perf_counter()-started
-    np.savez_compressed(path, **arrays)
-    record = dict(name=name, inputs=inputs, path=str(path), digest=file_digest(path), seconds=seconds)
-    record_path.write_text(json.dumps(record, indent=2, allow_nan=False))
-    return arrays, {**record, 'cache_hit': False}
 
 
 def write_artifact(directory, info):

@@ -22,17 +22,13 @@ uv pip install --python .venv-ltms 'pyspect[hj_reachability]==1.2' pillow \
 
 Do not source the legacy catkin workspace.
 
-The first run performs real Bicycle4D HJ integration (the TLT, the four passes and a
-half-step refinement); it takes about a minute. Each solve is
-stored by `ltms_bla.scenario.cached` under a key built from digests of its exact input
-arrays, the grid and dynamics fingerprint, the `ltms_reachability` sources, package
-versions and an artifact format number. The stored file's digest is verified before
-reuse, so changed inputs or evidence meanings never reuse old arrays. The optional
-`--cwd notebooks` runner flag tests the other supported working directory. For an
-independent cold run, use a new output directory:
+Every run performs real Bicycle4D HJ integration (the TLT, the four passes and a
+half-step refinement); it takes about a minute. Nothing is cached between runs. The
+optional `--cwd notebooks` runner flag tests the other supported working directory,
+and `--output` writes the artifacts elsewhere:
 
 ```sh
-uv run --group notebooks python scripts/run_ltms_notebook.py --output /tmp/ltms-fresh
+uv run --group notebooks python scripts/run_ltms_notebook.py --output /tmp/ltms
 ```
 
 ## Workflow
@@ -45,15 +41,16 @@ declared grid) or **[independent]** (nominal execution checks and analytic bound
 
 1. **Model.** Notebook cells define the vehicle, a point-mass kinematic bicycle
    (steering-angle and acceleration bounds, chart; the solver's Bicycle4D), the road
-   as boxes over named axes (`LANE`, the zones, `inside`; the same boxes become level
-   sets in §2) and the fixed client (entry state, `reference`, presence and lease,
+   as boxes over named axes (`LANE`, the zones, `inside`; the same boxes become pyspect
+   set builders in §2) and the fixed client (entry state, `reference`, presence and lease,
    `eligible`, the deadline relation and the speed bound), with a predicate table for
    $H_\kappa$, $a_s$, $S_a$, $B_j$ and $S_u$. The reference is checked in `LANE` and
    ending in `EXIT_ZONE`, which are subsets of `road_e` and `exit_e`.
 2. **Environment, task and corridor.** Notebook cells define the grid, build the
-   eastbound map regions from level-set boxes and hyperplanes (asserted equal to the
-   legacy map); with a point vehicle these are exactly the task sets. They
-   build the time-masked TLT for `road_e U_[7,8] exit_e` and realize it, run the four
+   eastbound map regions with pyspect set builders (`BoxSet`, `PolytopeSet`, `Inter`,
+   `Union`; realized inside sets asserted equal to the legacy map); with a point vehicle
+   these are exactly the task sets. They build the TLT for `road_e U_[7,8] exit_e`,
+   with the target window as a box on `t`, and realize it, run the four
    LTMS passes (pass 2 is pass 1), intersect with the lane strip, check the full
    four-state entry state and the reference rollout, and project and inflate the tube
    into the reservation, checking that the reference path lies in it. The local window
@@ -114,7 +111,7 @@ accepted snapshot. Conflicting templates are rejected; this example does not
 recompute more permissive HJ corridors around an existing reservation.
 
 `ltms_bla` contains only reusable machinery: immutable records, generic raster
-geometry, input-keyed caching, artifact storage and verification, the
+geometry, artifact storage and verification, the
 notebook-method loader and serial runner, and presentation helpers. The model,
 environment and numerical construction live in the notebook. Prices are outside
 the guarantees. The exact accepted offer object and price are stored without
@@ -160,7 +157,7 @@ reproduction and final manuscript model/claims remain separate review work.
 ## Artifacts and checks
 
 All generated files live under the ignored `artifacts/ltms_blas/` directory:
-hashed full-state arrays, offer JSON, `report.json`, `results.md`, standalone
+the full corridor and reservation (`base.npz`, referenced by digest from each offer), offer JSON, `report.json`, `results.md`, standalone
 SVG/PNG, and an offline interactive HTML figure. The saved notebook keeps compact
 results and native Plotly data. The HTML export includes Plotly itself.
 
