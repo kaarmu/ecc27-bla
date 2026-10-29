@@ -106,6 +106,23 @@ class PyspectPlannerTests(unittest.TestCase):
         self.assertLess(terminal[0, np.argmin(abs(x+1.3))], 0)
         self.assertGreater(terminal[0, np.argmin(abs(x))], 0)
 
+    def test_timed_target_endpoints_and_constraint_at_witness(self):
+        p = self.planner
+        x = np.asarray(p.grid.coordinate_vectors[0])
+        at = lambda tube, value: tube[0, np.argmin(abs(x-value))]
+        # x_dot=1: the goal [.4,1] is occupied during [1,2] exactly from x0 in [-1.6, 0].
+        _, windowed = p.until(self.rules, self.goal, target_window=TimeWindow(1, 2))
+        self.assertLess(at(windowed, -1.5), 0)
+        self.assertLess(at(windowed, -.1), 0)
+        self.assertGreater(at(windowed, .3), 0)   # leaves the goal before t=1
+        self.assertGreater(at(windowed, -1.8), 0)  # reaches the goal after t=2
+        # The native backend intersects the target with the constraint at the
+        # witness: with constraint x <= .7, the terminal witness set is [.4,.7].
+        rules = rectangle(p.grid, [-2], [.7])
+        _, terminal = p.until(rules, self.goal, target_window=TimeWindow(2, 2))
+        self.assertLess(at(terminal, -1.5), 0)
+        self.assertGreater(at(terminal, -1.1), 0)
+
     def test_four_passes_candidate_order_and_cached_input(self):
         p = self.planner
         original = self.offline.copy()

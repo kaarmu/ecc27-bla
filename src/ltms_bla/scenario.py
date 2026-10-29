@@ -1,25 +1,30 @@
-"""Serial corridor admission, unchanged bargaining rounds and exact commitment."""
+"""Worker transport, artifact checks and the serial runner for the LTMS notebook.
+
+The protocol stages (contracts, admission, offers, commitment) are defined in
+notebooks/ltms_blas.ipynb. ``load_method`` compiles its tagged definition
+cells verbatim, so the runner and the notebook execute one implementation.
+"""
 from dataclasses import asdict
-from fractions import Fraction as F
 from hashlib import sha256
 from pathlib import Path
-from time import perf_counter
+from types import SimpleNamespace
 import json
 import os
 import shutil
 import subprocess
-import sys
 
-from protocol import affine_policies
-from .bargaining import load_bargain
-from .records import (CrossingService, CorridorOffer, snapshot_id, standing,
-                      certify_template, commit_exact, digest)
+from .records import digest, snapshot_id, standing
+
+METHOD = ('service_contracts', 'qualify', 'admit', 'generate', 'commit', 'attempt',
+          'bargain', 'REQUESTS', 'PRICES', 'ROUND_BUDGET')
 
 
 class NumericalWorker:
     def __init__(self, root, output, worker_python=None):
+        root = Path(root).resolve()
         self.output = Path(output).resolve()
         self.output.mkdir(parents=True, exist_ok=True)
+        worker_python = worker_python or os.environ.get('LTMS_WORKER_PYTHON')
         if worker_python:
             command = [str(worker_python), '-m', 'ltms_bla.worker']
         else:
@@ -36,6 +41,17 @@ class NumericalWorker:
         self.log = (self.output/'worker.log').open('w')
         self.process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=self.log, text=True, bufsize=1)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def prepare(self):
+        """Compute or verify-and-reuse the base artifacts; kept for offer identities."""
+        self.setup = self.call(op='prepare', output=str(self.output))
+        return self.setup
 
     def call(self, **message):
         self.process.stdin.write(json.dumps(message)+'\n')
@@ -78,104 +94,84 @@ def verify_artifact(offer):
         raise ValueError('full numerical corridor changed after generation')
 
 
-def run_scenario(root, output=None, worker_python=None, refine=True):
-    root = Path(root).resolve()
-    output = root/'artifacts'/'ltms_blas' if output is None else Path(output).resolve()
-    worker = NumericalWorker(root, output, worker_python or os.environ.get('LTMS_WORKER_PYTHON'))
-    started = perf_counter()
-    try:
-        setup = worker.call(op='prepare', output=str(output))
-        refinement = worker.call(op='refine') if refine else None
-        bargain = load_bargain(root)
-        ledger, attempts = (), []
-        requests = (
-            ('A', (CrossingService('A', 'east', (0,), 8),), False),
-            ('B', (CrossingService('B', 'west', (0, 1), 9),), False),
-            ('C', (CrossingService('C', 'east', (0, 1), 9),), False),
-            ('D', (CrossingService('D', 'west', (10, 11), 19),), True),
-            ('E', (CrossingService('E', 'east', (20,), 22),
-                   CrossingService('E', 'east', (20,), 28)), False),
-        )
-        for name, alternatives, price_failure in requests:
-            previous, snapshot = ledger, snapshot_id(ledger)
-            for bla in previous:
-                verify_artifact(bla.offer)
-            service_log, offers, selected = [], (), None
-            for service in alternatives:
-                client, task, quotient = service.contracts()
-                candidates, replies = [], []
-                for departure in service.departures:
-                    offer_id = digest(dict(service=service.key, departure=departure,
-                                           snapshot=snapshot, base=setup['base_digest']))[:20]
-                    evaluated = perf_counter()
-                    reply = worker.call(op='evaluate', service=asdict(service), departure=departure,
-                                        snapshot=snapshot, id=offer_id,
-                                        accepted=[artifact_record(b.offer) for b in ledger])
-                    reply['warm_roundtrip_seconds'] = perf_counter()-evaluated
-                    replies.append(dict(departure=departure, **reply))
-                    if reply['status'] != 'QUALIFIED':
-                        continue
-                    info = reply['info']
-                    offer = CorridorOffer(offer_id, service, departure, F(info['end']), snapshot,
-                                          reply['artifact'], reply['artifact_digest'],
-                                          json.dumps(info['checks'], sort_keys=True))
-                    certify_template(offer)
-                    candidates.append(offer)
-                service_log.append(dict(service=asdict(service), key=service.key,
-                                        sufficient_access=str(service.access),
-                                        client_contract=str(client), quotient=str(quotient),
-                                        candidates=replies))
-                if candidates:
-                    selected, offers = service, tuple(candidates)
-                    break  # freeze ONE service/client model before bargaining
-            if not offers:
-                negotiation = None
-                status = 'NO-COMPATIBLE-OFFER'
-                rounds = []
-            else:
-                assert all(o.service is selected for o in offers)
-                costs = {o: F(5 if i == 0 else 2) for i, o in enumerate(offers)}
-                values = {o: F((1 if i == 0 else 0) if price_failure else (10 if i == 0 else 8))
-                          for i, o in enumerate(offers)}
-                policies = affine_policies(costs, values)
-                targets = {'owner': F(4), 'client': F(1 if price_failure else 4)}
-                minima = {'owner': F(2 if price_failure else 1), 'client': F(0 if price_failure else 1)}
-                negotiation = bargain(offers, policies, targets, minima, (F(0), F(20)), round_budget=3)
-                ledger = commit_exact(offers, negotiation, ledger, verify_artifact)
-                status = 'COMMITTED' if negotiation.status == 'ACCEPTED' else 'PRICE-NO-BLA'
-                rounds = [dict(number=r.number, proposer=r.proposer, offer=r.proposal.offer.id,
-                               price=str(r.proposal.price), accepted=r.accepted,
-                               targets={k: str(v) for k, v in r.targets},
-                               utilities={k: str(v) for k, v in r.utilities}) for r in negotiation.history]
-            # Retain every prior artifact/contract and the exact priced offer.
-            preserved = all(ledger[i] is bla for i, bla in enumerate(previous))
-            for bla in previous:
-                verify_artifact(bla.offer)
-            if status != 'COMMITTED':
-                assert ledger is previous
-            assert preserved
-            attempts.append(dict(client=name, status=status, services=service_log,
-                                 selected_service=None if selected is None else selected.key,
-                                 offers=[dict(id=o.id, departure=o.departure, end=str(o.end),
-                                              contract=str(o.contract), **artifact_record(o)) for o in offers],
-                                 rounds=rounds, previous_preserved=preserved,
-                                 snapshot=snapshot, ledger_after=snapshot_id(ledger),
-                                 accepted=None if status != 'COMMITTED' else dict(
-                                     id=ledger[-1].offer.id, price=str(ledger[-1].price),
-                                     exact_object=ledger[-1].offer is negotiation.agreement.offer)))
-        final = worker.call(op='final', accepted=[artifact_record(b.offer) for b in ledger], attempts=attempts)
-        expected = ['COMMITTED', 'COMMITTED', 'NO-COMPATIBLE-OFFER', 'PRICE-NO-BLA', 'COMMITTED']
-        assert [a['status'] for a in attempts] == expected, [a['status'] for a in attempts]
-        assert len(attempts[1]['offers']) == 2
-        assert attempts[-1]['services'][0]['candidates'][0]['status'] == 'PROVED_IMPOSSIBLE'
-        report = dict(attempts=attempts, accepted=[dict(id=b.offer.id, client=b.offer.service.client,
-                       price=str(b.price), contract=str(b.contract), **artifact_record(b.offer)) for b in ledger],
-                      standing_contract=str(standing(ledger)), final=final,
-                      seconds=perf_counter()-started, method_source=sha256(
-                          (root/'notebooks'/'protocol.ipynb').read_bytes()).hexdigest(),
-                      refinement=refinement,
-                      claim='Illustrative numerical BLA scenario with exact nominal straight-motion clients; no robustness certificate.')
-        (output/'report.json').write_text(json.dumps(report, indent=2, allow_nan=False))
-        return report
-    finally:
-        worker.close()
+def definition_cells(root):
+    path = Path(root).resolve()/'notebooks'/'ltms_blas.ipynb'
+    return [(f'{path}:cell_{index}', ''.join(cell['source']))
+            for index, cell in enumerate(json.loads(path.read_text())['cells'])
+            if cell['cell_type'] == 'code' and 'definitions' in cell.get('metadata', {}).get('tags', [])]
+
+
+def method_digest(root):
+    """Digest of the method source only; saved outputs do not change it."""
+    return digest([source for _, source in definition_cells(root)])
+
+
+def load_method(root):
+    """Compile the notebook's tagged definition cells verbatim (no copies)."""
+    namespace = {'__name__': '_ltms_method', 'ROOT': Path(root).resolve()}
+    for name, source in definition_cells(root):
+        exec(compile(source, name, 'exec'), namespace)
+    return SimpleNamespace(**{name: namespace[name] for name in METHOD})
+
+
+def run_scenario(root, worker, method=None):
+    """Serial A–E attempts with the notebook's own stages and inputs."""
+    method = load_method(root) if method is None else method
+    ledger, attempts = (), []
+    for spec in method.REQUESTS:
+        record = method.attempt(spec, ledger, worker)
+        attempts.append(record)
+        ledger = record['result'].ledger
+    return attempts, ledger
+
+
+def outcome_summary(attempts):
+    """Outcome, selected departure, price, offer family and retained promises."""
+    rows = []
+    for a in attempts:
+        agreement = a['negotiation'].agreement
+        rows.append((a['request'].client, a['result'].status, tuple(o.id for o in a['offers']),
+                     None if agreement is None else agreement.offer.departure,
+                     None if agreement is None else agreement.price,
+                     tuple((b.offer.id, b.price) for b in a['result'].ledger)))
+    return rows
+
+
+def attempt_record(a):
+    """A JSON summary of one staged attempt; no stage is re-run."""
+    admission, negotiation, result = a['admission'], a['negotiation'], a['result']
+    accepted = result.agreement
+    return dict(
+        client=a['request'].client, status=result.status, snapshot=admission.snapshot,
+        services=[dict(service=asdict(s.service), key=s.service.key, eligible=list(s.service.eligible),
+                       sufficient_access=str(s.S_a), client_contract=str(s.client),
+                       quotient=str(s.quotient), obligations=str(s.obligations),
+                       candidates=[dict(departure=c.departure, id=c.offer_id, status=c.status,
+                                        reason=c.reply.get('reason'), evidence=c.reply.get('evidence'))
+                                   for c in s.candidates])
+                  for s in admission.services],
+        selected_service=None if admission.selected is None else admission.selected.service.key,
+        offers=[dict(id=o.id, departure=o.departure, end=str(o.end), contract=str(o.contract),
+                     **artifact_record(o)) for o in a['offers']],
+        rounds=[dict(number=r.number, proposer=r.proposer, offer=r.proposal.offer.id,
+                     price=str(r.proposal.price), accepted=r.accepted,
+                     targets={k: str(v) for k, v in r.targets},
+                     utilities={k: str(v) for k, v in r.utilities}) for r in negotiation.history],
+        previous_preserved=a['previous_preserved'], ledger_after=snapshot_id(result.ledger),
+        accepted=None if accepted is None else dict(
+            id=accepted.offer.id, price=str(accepted.price),
+            exact_object=accepted.offer is negotiation.agreement.offer))
+
+
+def build_report(root, attempts, ledger, setup, refinement, worker):
+    records = [attempt_record(a) for a in attempts]
+    final = worker.call(op='final', accepted=[artifact_record(b.offer) for b in ledger], attempts=records)
+    return dict(attempts=records,
+                accepted=[dict(id=b.offer.id, client=b.offer.service.client, departure=b.offer.departure,
+                               price=str(b.price), contract=str(b.contract), **artifact_record(b.offer))
+                          for b in ledger],
+                standing_contract=str(standing(ledger)), final=final, setup=setup, refinement=refinement,
+                method_source=method_digest(root),
+                bargaining_source=sha256((Path(root)/'notebooks'/'protocol.ipynb').read_bytes()).hexdigest(),
+                claim='Illustrative numerical BLA scenario with exact nominal straight-motion clients; '
+                      'no robustness certificate.')

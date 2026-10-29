@@ -2,15 +2,73 @@
 from pathlib import Path
 import json
 
+from protocol import fmt
+from .records import latex_atom
+
+try:
+    from IPython.display import Markdown, display
+except ImportError:
+    Markdown, display = str, print
+
+# Attempt outcomes and candidate statuses keep distinct meanings.
+MEANINGS = {
+    'COMMITTED': 'exact negotiated offer and price stored; standing commitment conjoined',
+    'NO-COMPATIBLE-OFFER': 'every template conflicts with a retained reservation; not physical impossibility',
+    'PRICE-NO-BLA': 'qualified offers exist; bargaining exhausted without agreement',
+    'PROVED-IMPOSSIBLE': 'an independent analytic bound excludes every permitted service',
+    'UNRESOLVED': 'numerical evidence does not apply; neither an offer nor impossibility',
+    'QUALIFIED': 'service and compatibility evidence both hold',
+    'GEOMETRIC_CONFLICT': 'template rejected: its reservation meets a standing one',
+    'PROVED_IMPOSSIBLE': 'independent necessary bound fails',
+}
+
+
+def latex(value, symbols=None):
+    """protocol.fmt, with proposition names replaced by display symbols."""
+    if isinstance(value, (tuple, list)):
+        return '(' + ', '.join(latex(v, symbols) for v in value) + ')'
+    if isinstance(value, float):
+        return f'{value:.4g}'
+    text = fmt(value)
+    for name, symbol in (symbols or {}).items():
+        text = text.replace(latex_atom(name), symbol)
+    return text
+
+
+def table(headers, rows, symbols=None):
+    def line(values):
+        return '| ' + ' | '.join(latex(v, symbols).replace('|', r'\|') for v in values) + ' |'
+    display(Markdown('\n'.join([line(headers), line(['---']*len(headers)), *(line(r) for r in rows)])))
+
+
+def candidate_rows(admission, names):
+    """One row per template: status, meaning, and the two kinds of evidence apart.
+
+    ``names`` maps standing offer identities to client names.
+    """
+    for tried in admission.services:
+        for c in tried.candidates:
+            checks = c.reply.get('info', {}).get('checks', {})
+            service = checks.get('service', c.reply.get('service'))
+            comparisons = checks.get('compatibility', {}).get('disjoint_from', c.reply.get('comparisons'))
+            yield (f'{tried.service.client} · d={tried.service.deadline}', c.departure, c.status,
+                   MEANINGS[c.status], '—' if service is None else all(service.values()),
+                   '—' if comparisons is None else ', '.join(
+                       f"{names[x['offer']]}: {'disjoint' if x['disjoint'] else 'meets'}"
+                       for x in comparisons) or 'no standing BLA',
+                   c.reply.get('reason', ''))
+
 
 def results_table(report):
-    rows = ['| Client | Outcome | Qualified offers | Selected departure | Price | Prior BLAs retained |',
-            '|:--|:--|--:|--:|--:|:--|']
+    rows = ['| Client | Candidate statuses | Outcome | Meaning | Offers | Selected departure | Price | Prior BLAs retained |',
+            '|:--|:--|:--|:--|--:|--:|--:|:--|']
     for attempt in report['attempts']:
         accepted = attempt['accepted']
         chosen = next((o for o in attempt['offers'] if accepted and o['id'] == accepted['id']), None)
-        rows.append(f"| {attempt['client']} | {attempt['status']} | {len(attempt['offers'])} | "
-                    f"{'—' if chosen is None else chosen['departure']} | "
+        statuses = '; '.join(f"d={s['service']['deadline']}: " + ', '.join(
+            f"s={c['departure']} {c['status']}" for c in s['candidates']) for s in attempt['services'])
+        rows.append(f"| {attempt['client']} | {statuses} | {attempt['status']} | {MEANINGS[attempt['status']]} | "
+                    f"{len(attempt['offers'])} | {'—' if chosen is None else chosen['departure']} | "
                     f"{'—' if accepted is None else accepted['price']} | {attempt['previous_preserved']} |")
     return '\n'.join(rows)
 
