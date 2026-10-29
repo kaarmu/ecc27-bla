@@ -80,7 +80,7 @@ def plot_scenario(report):
     from plotly.subplots import make_subplots
     figure = make_subplots(rows=2, cols=2, specs=[[{}, {}], [{'colspan': 2}, None]],
                            subplot_titles=('Accepted crossings and reserved lane bands',
-                                           'TLT root at t=0, h=0, v=0.45',
+                                           'Capability value V_R at t=0, h=0, v=0.45',
                                            'Offered lease intervals and exact accepted choices'),
                            vertical_spacing=.17, row_heights=[.65, .35])
     colors = {'A': '#0072B2', 'B': '#D55E00', 'C': '#888888', 'D': '#CC79A7', 'E': '#009E73'}
@@ -92,7 +92,7 @@ def plot_scenario(report):
         states = path['states']
         figure.add_trace(go.Scatter(x=[s[0] for s in states], y=[s[1] for s in states],
                                    mode='lines', line=dict(color=colors[name], width=3),
-                                   name=f'{name}: checked execution',
+                                   name=f'{name}: declared client execution',
                                    customdata=path['times'], hovertemplate='x=%{x:.2f}, y=%{y:.2f}<br>t=%{customdata:.2f}s'), row=1, col=1)
         figure.add_trace(go.Contour(x=report['final']['rx'], y=report['final']['ry'],
                                    z=path['reserved_union'], showscale=False, opacity=.13,

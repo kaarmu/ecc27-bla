@@ -4,7 +4,8 @@ try:
 except ImportError as error:
     raise unittest.SkipTest('optional numerical geometry tests need numpy') from error
 
-from ltms_bla.checks import aligned_disjoint, boxes_covered, boxes_disjoint, minimum_separation
+from ltms_bla.checks import (aligned_disjoint, boxes_covered, boxes_disjoint, minimum_separation,
+                             sampled_separation)
 
 
 class CorridorGeometryTests(unittest.TestCase):
@@ -25,6 +26,15 @@ class CorridorGeometryTests(unittest.TestCase):
         self.assertAlmostEqual(minimum_separation(times, a, times, b), 0.)  # they meet at t=1
         b[:, 1] = .8
         self.assertAlmostEqual(minimum_separation(times, a, times, b), .8)
+
+    def test_sampled_separation_on_common_times(self):
+        times = np.array([0., 2.])
+        a = np.array([[-1., 0.], [1., 0.]])
+        b = np.array([[1., .8], [-1., .8]])
+        self.assertAlmostEqual(sampled_separation(times, a, times, b, .025), .8)
+        b[:, 1] = 0.
+        self.assertAlmostEqual(sampled_separation(times, a, times, b, .025), 0.)  # t=1 is a sample
+        self.assertEqual(sampled_separation(times, a, times+5, b, .025), float('inf'))
 
     def test_box_coverage_needs_every_cell_a_box_meets(self):
         rx, ry = np.arange(-1, 1.01, .1), np.arange(-1, 1.01, .1)

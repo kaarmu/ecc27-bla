@@ -25,7 +25,7 @@ def export_figure(data, attempts, output):
     reach_ax.contourf(data['x'], data['y'], values, levels=np.linspace(-.15, .3, 16), cmap='RdBu_r', extend='both')
     reach_ax.contour(data['x'], data['y'], values, levels=[0], colors='black', linewidths=.7)
     reach_ax.plot(-1.6, -.4, marker='*', color='black', ms=10)
-    reach_ax.set(xlabel='x [m]', ylabel='y [m]', title='TLT root: t=0, h=0, v=0.45')
+    reach_ax.set(xlabel='x [m]', ylabel='y [m]', title='Capability value V_R: t=0, h=0, v=0.45')
     reach_ax.set_aspect('equal')
     for i, attempt in enumerate(attempts):
         for offer in attempt['offers']:

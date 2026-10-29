@@ -123,6 +123,31 @@ class PyspectPlannerTests(unittest.TestCase):
         self.assertLess(at(terminal, -1.5), 0)
         self.assertGreater(at(terminal, -1.1), 0)
 
+    def test_generated_query_matches_the_windowed_until(self):
+        import interval_logic as il
+        import portion as P
+        from pyspect import Set
+        from ltms_bla.tlt import compile_query
+        p = self.planner
+        x = np.asarray(p.grid.coordinate_vectors[0])
+        at = lambda tube, value: tube[0, np.argmin(abs(x-value))]
+        road, alloc, goal = il.Proposition('road'), il.Proposition('alloc'), il.Proposition('goal')
+        where = dict(road=Set(p._tube(self.rules)), alloc=Set(-np.ones(p.shape)), goal=Set(p._tube(self.goal)))
+        # Read at anchor 5, the absolute window [6, 7] is the solver's [1, 2].
+        tree = compile_query(il.Until(road & alloc, goal, P.closed(6, 7)), 5, where)
+        generated = np.asarray(tree.realize(p.impl))
+        _, windowed = p.until(self.rules, self.goal, target_window=TimeWindow(1, 2))
+        for value in (-1.5, -.1, .3, -1.8):
+            self.assertEqual(at(generated, value) <= 0, at(windowed, value) <= 0)
+        # Outside the supported fragment, or uninterpreted: refused, not approximated.
+        for formula, anchor in ((il.Until(road, goal, P.closed(4, 7)), 5),
+                                (il.Until(road, goal, P.open(6, 7)), 5),
+                                (il.Until(road, goal, 2), 5),
+                                (il.Or((il.Until(road, goal, P.closed(6, 7)), goal)), 5),
+                                (il.Until(road, il.Proposition('elsewhere'), P.closed(6, 7)), 5)):
+            with self.subTest(formula=str(formula)), self.assertRaises(ValueError):
+                compile_query(formula, anchor, where)
+
     def test_four_passes_candidate_order_and_cached_input(self):
         p = self.planner
         original = self.offline.copy()

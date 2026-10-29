@@ -1,8 +1,10 @@
 """Immutable, dependency-light coordinator records; prices stay outside contracts.
 
-Predicates are Boolean atoms whose meanings are fixed in the notebook's model
-cells. Boolean normalization cannot infer containment between different atoms,
-so geometric facts are recorded as separate evidence.
+The client's task is a structured interval_logic formula over interpreted state
+atoms (road, exit, allocation), so the notebook can generate reachability
+queries from it. The capability predicates F_s and promises H_kappa are atoms;
+Boolean normalization cannot infer entailments between atoms under the
+dynamics, so those are recorded as separate evidence.
 """
 from dataclasses import dataclass
 from fractions import Fraction as F
@@ -10,10 +12,11 @@ from hashlib import sha256
 import json
 
 import interval_logic as il
+import portion as P
 from protocol import Contract, normalize
 
-SERVICE_CHECKS = ('entry_inside', 'rollout_inside', 'road_ok', 'exit_ok', 'input_ok',
-                  'reference_covered', 'tlt_window_within_deadline')
+SERVICE_CHECKS = ('capability', 'policy_on_road', 'policy_in_allocation', 'policy_reaches_exit',
+                  'policy_inputs_bounded', 'window_within_deadline')
 
 
 def digest(value):
@@ -44,28 +47,42 @@ class CrossingService:
         return digest(dict(client=self.client, route=self.route,
                            departures=self.departures, deadline=self.deadline))[:16]
 
-    def access_for(self, departure):
+    @property
+    def road(self):
+        return il.Proposition(f"road_{self.route[0]}")
+
+    @property
+    def exit(self):
+        return il.Proposition(f"exit_{self.route[0]}")
+
+    @property
+    def alloc(self):
+        """p(z_j(t)) ∈ r_j(t): the client's position lies in its allocation."""
+        return il.Proposition(f'alloc_{self.client}')
+
+    def task_for(self, departure):
+        """Phi_s, read at s from the entry state: (road ∧ alloc) U_[s,d] exit."""
         if departure not in self.departures:
             raise ValueError('departure is outside selected service')
-        # a_s, owner-only: the allocation contains this client's reference
-        # position throughout its presence interval [s, s+7].
-        return il.Proposition(f'a_{self.client}_{self.route}_{departure}')
+        return il.Until(self.road & self.alloc, self.exit, P.closed(departure, self.deadline))
 
     @property
-    def rule(self):
-        """B_j: the client's position stays in its allocation while present."""
-        return il.Proposition(f'B_{self.client}')
+    def task(self):
+        """T: the client crosses from one of its departures, inside its allocation."""
+        return il.Or(self.task_for(s) for s in self.departures)
 
-    @property
-    def task_atom(self):
-        """S_u(theta): stay on road_e until reaching exit_e, by the deadline."""
-        return il.Proposition(f'Su_{self.client}_{self.route}_{self.deadline}')
+    def access_for(self, departure):
+        """F_s, owner-only: the allocation admits a control input satisfying Phi_s."""
+        if departure not in self.departures:
+            raise ValueError('departure is outside selected service')
+        return il.Proposition(f'F_{self.client}_{self.route}_{departure}')
 
     @property
     def symbols(self):
-        return {**{self.access_for(s).name: f'a^{{{self.client}}}_{{{s}}}' for s in self.departures},
-                self.rule.name: f'B_{{{self.client}}}',
-                self.task_atom.name: f'S_u^{{{self.client}}}({self.deadline})'}
+        d = self.route[0]
+        return {**{self.access_for(s).name: f'F^{{{self.client}}}_{{{s}}}' for s in self.departures},
+                self.road.name: rf'\mathit{{road}}_{d}', self.exit.name: rf'\mathit{{exit}}_{d}',
+                self.alloc.name: f'r_{{{self.client}}}'}
 
 
 @dataclass(frozen=True)
@@ -100,8 +117,7 @@ class Candidate:
 class ServiceAdmission:
     service: CrossingService
     S_a: il.Formula
-    B: il.Formula
-    S_u: il.Formula
+    T: il.Formula
     client: Contract
     task: Contract
     quotient: Contract
@@ -160,8 +176,8 @@ class CorridorOffer:
 
     @property
     def contract(self):
-        # K_kappa = <T | H_kappa and a_s>: the reference predicate is the
-        # explicit, geometrically checked consequence of the corridor promise.
+        # K_kappa = <T | H_kappa and F_s>: the capability predicate is the
+        # explicit consequence of the promise, decided by the generated query.
         return Contract(True, self.promise & self.service.access_for(self.departure))
 
     @property
@@ -215,8 +231,10 @@ def refines(first, second):
 def certify_service(offer):
     """Service evidence first, then the Boolean implication to the fixed S_a.
 
-    The implication is algebraic only because K_kappa names a_s explicitly;
-    its redundancy given H_kappa rests on the reference_covered evidence.
+    The implication is algebraic only because K_kappa names F_s explicitly;
+    its redundancy given H_kappa rests on the capability evidence (the query
+    generated from F_s with the allocation set to R_kappa) and the declared
+    client's execution of it.
     """
     service = offer.evidence.get('service', {})
     missing = [k for k in SERVICE_CHECKS if service.get(k) is not True]

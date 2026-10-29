@@ -99,14 +99,16 @@ class CorridorProtocolTests(unittest.TestCase):
         attempts, _, _ = self.run_synthetic()
         for a in attempts:
             for s in a['admission'].services:
-                self.assertEqual(s.quotient.assumption, normalize(~s.S_a | (s.B & s.S_u)))
+                self.assertEqual(s.quotient.assumption, normalize(~s.S_a | s.T))
                 self.assertEqual(s.quotient.guarantee, normalize(s.S_a))
                 self.assertEqual(normalize(s.obligations.guarantee),
                                  normalize(a['admission'].commitment.guarantee & s.S_a))
         E = attempts[4]['admission']
         original, adapted = E.services
-        self.assertEqual(normalize(original.S_a), il.Boolean(False))  # 20+7 > 22: no eligible reference
+        # F_20 stays in S_a; the independent speed bound refutes it for d=22.
+        self.assertEqual(normalize(original.S_a), original.service.access_for(20))
         self.assertEqual(normalize(adapted.S_a), adapted.service.access_for(20))
+        self.assertNotEqual(original.T, adapted.T)  # the task's until window ends at d
         self.assertEqual([c.status for c in original.candidates], ['PROVED_IMPOSSIBLE'])
         self.assertIs(E.selected, adapted)
         B = attempts[1]
@@ -127,8 +129,8 @@ class CorridorProtocolTests(unittest.TestCase):
         # Boolean algebra alone cannot see C's geometric conflict with A.
         conflict = attempts[2]['admission'].services[0].candidates[0]
         H = il.Proposition(f'H_{conflict.offer_id}')
-        a = attempts[2]['admission'].services[0].service.access_for(conflict.departure)
-        self.assertNotEqual(normalize(attempts[2]['admission'].commitment.guarantee & H & a), il.Boolean(False))
+        F_C = attempts[2]['admission'].services[0].service.access_for(conflict.departure)
+        self.assertNotEqual(normalize(attempts[2]['admission'].commitment.guarantee & H & F_C), il.Boolean(False))
 
     def test_false_evidence_cannot_qualify_an_offer(self):
         service = CrossingService('B', 'west', (0, 1), 9)
@@ -142,15 +144,15 @@ class CorridorProtocolTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_corridors((offer(service, 0, compatibility=broken),), {'owner': 1, 'client': 1},
                                    {'owner': 0, 'client': 0}, (0, 10), 3)
-        # Service evidence for an ineligible departure does not reach S_a.
+        # Capability evidence for one departure does not reach another departure's access predicate.
         with self.assertRaises(ValueError):
-            certify_service(offer(CrossingService('B', 'west', (0, 3), 9), 3))
+            certify_service(replace(offer(service, 1), access=service.access_for(0)))
 
     def test_failure_meanings_stay_distinct(self):
         service = CrossingService('F', 'east', (0, 1), 9)
         def admission(*statuses):
             candidates = tuple(Candidate(s, f'id{s}', dict(status=status)) for s, status in enumerate(statuses))
-            return Admission(None, '', standing(()), (ServiceAdmission(service, *[None]*7, candidates),))
+            return Admission(None, '', standing(()), (ServiceAdmission(service, *[None]*6, candidates),))
         self.assertEqual(admission('PROVED_IMPOSSIBLE', 'PROVED_IMPOSSIBLE').failure, 'PROVED-IMPOSSIBLE')
         self.assertEqual(admission('GEOMETRIC_CONFLICT', 'PROVED_IMPOSSIBLE').failure, 'NO-COMPATIBLE-OFFER')
         self.assertEqual(admission('UNRESOLVED', 'PROVED_IMPOSSIBLE').failure, 'UNRESOLVED')
@@ -186,33 +188,48 @@ class CorridorProtocolTests(unittest.TestCase):
 
 class NotebookModelTests(unittest.TestCase):
     """The notebook's model cells, exercised directly."""
-    def test_declared_reference_fulfils_the_task(self):
+    def test_task_formula_keeps_its_physical_structure(self):
+        service = CrossingService('B', 'west', (0, 1), 9)
+        phi = service.task_for(1)
+        self.assertIsInstance(phi, il.Until)
+        self.assertEqual(phi.left, il.Proposition('road_w') & il.Proposition('alloc_B'))
+        self.assertEqual(phi.right, il.Proposition('exit_w'))
+        self.assertEqual(phi.parameter.interval, P.closed(1, 9))
+        self.assertEqual(service.task, il.Or((service.task_for(0), phi)))
+        S_a, T, C_client, R_task = METHOD.service_contracts(service)
+        self.assertEqual(S_a, il.Or((service.access_for(0), service.access_for(1))))
+        self.assertEqual(normalize(R_task.quotient(C_client).guarantee), normalize(S_a))
+
+    def test_zero_input_execution_reaches_the_exit_in_the_lane(self):
         M = METHOD
-        start, end = M.reference(0), M.reference(M.PRESENCE)
-        self.assertAlmostEqual(end[0], 1.55)
-        self.assertTrue(M.inside(start, M.LANE) and M.inside(end, M.LANE, M.EXIT_ZONE))
-        self.assertFalse(M.inside(M.reference(M.PRESENCE, speed=.35), M.EXIT_ZONE))
+        times, states, inputs = M.execute(lambda t, z: (0., 0.))
+        self.assertTrue(M.inside(states[-1], M.LANE, M.EXIT_ZONE))
+        self.assertAlmostEqual(times[-1], 6.675)  # 3.0 m at 0.45 m/s, in 0.025 s steps
+        self.assertTrue(all(M.inside(z, M.LANE) for z in states))
+        np.testing.assert_allclose(states[:, 1:], np.tile(M.ENTRY[1:], (len(states), 1)))
         self.assertFalse(M.inside((-1.6, -.9, 0., M.SPEED), M.LANE))
 
-    def test_reference_solves_the_solver_model(self):
+    def test_hj_feedback_minimizes_the_hamiltonian(self):
+        M = METHOD
+        policy = M.hj_feedback(lambda t, z: (1., -1.))
+        self.assertEqual(policy(0, M.ENTRY), (M.CONTROLS['min_steer'], M.CONTROLS['max_accel']))
+        self.assertEqual(M.hj_feedback(lambda t, z: (0., 0.))(0, M.ENTRY), (0., 0.))
+
+    def test_bicycle4d_is_the_solver_model(self):
         try:
             from pyspect.systems.hj_reachability import Bicycle4D
         except ImportError:
             self.skipTest('needs pyspect[hj_reachability]')
         M = METHOD
         solver = Bicycle4D(**M.CONTROLS, wheelbase=M.WHEELBASE)
-        taus = np.linspace(0, M.PRESENCE, 29)
-        path = np.array([M.reference(t) for t in taus])
-        rates = np.array([np.asarray(solver(z, np.zeros(2), np.zeros(4), 0.)) for z in path[:-1]])
-        np.testing.assert_allclose(np.diff(path, axis=0), np.diff(taus)[:, None]*rates, atol=1e-6)
+        samples = np.random.default_rng(0).uniform([-2, -2, -.5, .3, -.15, -.15], [2, 2, .5, .6, .15, .15], (50, 6))
+        for z in samples:
+            np.testing.assert_allclose(M.bicycle4d(z[:4], z[4:]), np.asarray(solver(z[:4], z[4:], np.zeros(4), 0.)),
+                                       atol=1e-6)
 
     def test_deadline_relations(self):
         M = METHOD
-        for s in range(5):
-            for d in range(s+1, s+12):
-                if M.tlt_evidence_applies(s, d):  # [s+7, s+8] ⊆ [s, d] strengthens "clear by d"
-                    self.assertIn(s, M.eligible(CrossingService('X', 'east', (s,), d)))
-        self.assertEqual(M.eligible(CrossingService('X', 'east', (0, 1, 2), 8)), (0, 1))
+        self.assertTrue(M.certified_window_applies(0, 8))
+        self.assertFalse(M.certified_window_applies(30, 37))
         self.assertTrue(M.speed_bound_excludes(20, 22))   # 0.6 * 2 < 3
         self.assertFalse(M.speed_bound_excludes(20, 25))  # 0.6 * 5 >= 3
-        self.assertFalse(M.tlt_evidence_applies(30, 37))
