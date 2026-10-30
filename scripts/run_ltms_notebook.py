@@ -15,7 +15,7 @@ from nbclient import NotebookClient
 from jupyter_client import KernelManager
 
 PACKAGES = ('pyspect[hj_reachability]==1.2', 'pillow', 'matplotlib>=3.10', 'portion>=2.6.1',
-            'plotly', 'ipykernel')
+            'plotly', 'nbformat', 'ipykernel')
 
 
 def kernel_command():
