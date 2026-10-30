@@ -148,6 +148,17 @@ class PyspectPlannerTests(unittest.TestCase):
             with self.subTest(formula=str(formula)), self.assertRaises(ValueError):
                 compile_query(formula, anchor, where)
 
+    def test_set_builders_are_realized_on_the_backend(self):
+        from pyspect.set_builder import BoxSet
+        p = self.planner
+        goal, entry, rules = (BoxSet(dict(x=b), axes=['x']) for b in ((.4, 1.), (-.8, -.2), (-2, 3)))
+        policy = WindowPolicy(.1, .3, .1, .4)
+        built = p.analyze(entry=entry, goal=goal, constraints=rules, policy=policy, entry_window=TimeWindow(0, .4))
+        arrays = p.analyze(entry=np.asarray(entry(p.impl)), goal=np.asarray(goal(p.impl)),
+                           constraints=np.asarray(rules(p.impl)), policy=policy, entry_window=TimeWindow(0, .4))
+        for name in ('pass1', 'pass3', 'pass4'):
+            np.testing.assert_array_equal(built.passes[name], arrays.passes[name])
+
     def test_four_passes_candidate_order_and_cached_input(self):
         p = self.planner
         original = self.offline.copy()

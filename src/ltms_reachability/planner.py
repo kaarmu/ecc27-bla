@@ -12,6 +12,7 @@ import numpy as np
 import jax.numpy as jnp
 from pyspect import ContLTL, Set, TLT, UNTIL
 from pyspect.impls.hj_reachability import TVHJImpl
+from pyspect.set_builder import SetBuilder
 from pyspect.systems.hj_reachability import Bicycle5D
 
 from .config import GridSpec, WindowPolicy
@@ -91,6 +92,8 @@ class LTMSPlanner:
         return cls(impl, progress_bar=progress_bar)
 
     def _tube(self, values):
+        if isinstance(values, SetBuilder):  # realize on this backend's grid
+            values = values(self.impl)
         values = np.asarray(values, dtype=self.dtype)
         try:
             values = np.broadcast_to(values, self.shape)
@@ -170,6 +173,9 @@ class LTMSPlanner:
                 policy=None, reservations=(), time_origin=0.0, body_radius=0.0,
                 clearance=0.0, offline=None):
         """Compute independent pass1–pass4 tubes for one candidate.
+
+        entry, goal and constraints are level-set arrays or pyspect set
+        builders, which are realized on this planner's backend.
 
         Windows use local solver time; time_origin aligns explicit reservations
         in absolute time. offline optionally supplies an existing pass1 tube.
