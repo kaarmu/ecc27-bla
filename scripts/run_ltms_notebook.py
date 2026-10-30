@@ -34,7 +34,6 @@ def main():
     parser.add_argument('--cwd', choices=('root', 'notebooks'), default='root')
     parser.add_argument('--save', action='store_true')
     parser.add_argument('--timeout', type=int, default=1800)
-    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     path = root/'notebooks'/'ltms_blas.ipynb'
@@ -43,17 +42,10 @@ def main():
     manager.kernel_spec.argv = kernel_command()
     client = NotebookClient(notebook, km=manager, timeout=args.timeout, startup_timeout=300,
                             resources={'metadata': {'path': str(root if args.cwd == 'root' else root/'notebooks')}})
-    env = {**os.environ, 'MPLBACKEND': 'Agg'}
-    if args.output:
-        env['LTMS_OUTPUT'] = str(args.output.resolve())
-    client.execute(cleanup_kc=True, env=env)
+    client.execute(cleanup_kc=True, env={**os.environ, 'MPLBACKEND': 'Agg'})
     if args.save:
         for cell in notebook.cells:
             cell.metadata.pop('execution', None)
-            for output in cell.get('outputs', []):
-                data = output.get('data', {})
-                if 'application/vnd.plotly.v1+json' in data:
-                    data.pop('text/html', None)
         nbformat.write(notebook, path)
     print(f'Executed {path.name}; saved outputs: {args.save}')
 

@@ -2,8 +2,6 @@
 from dataclasses import replace
 from fractions import Fraction as F
 from pathlib import Path
-import json
-import tempfile
 import unittest
 
 try:
@@ -13,13 +11,12 @@ except ImportError as error:
 
 import interval_logic as il
 import portion as P
-from protocol import Booking, Certificate, CertifiedOffer, affine_policies, BargainingResult, normalize
+import protocol
+from protocol import Booking, CertifiedOffer, affine_policies, BargainingResult, normalize
 from protocol.companion import load_method_notebook
 from ltms_bla.bargaining import load_bargain, validate_corridors
-from ltms_bla.records import (SERVICE_CHECKS, Admission, Candidate, CrossingService, CorridorOffer,
-                              ServiceAdmission, certify_compatibility, certify_service, commit_exact,
-                              implies, refines, snapshot_id, standing)
-from ltms_bla.scenario import file_digest, load_method, outcome_summary, run_scenario
+from ltms_bla.records import Certificate, CrossingRequest, CrossingService, CorridorOffer, implies, refines
+from ltms_bla.scenario import load_method
 
 ROOT = Path(__file__).resolve().parents[1]
 if not (ROOT/'notebooks'/'protocol.ipynb').exists():
@@ -27,20 +24,15 @@ if not (ROOT/'notebooks'/'protocol.ipynb').exists():
 METHOD = load_method(ROOT)
 
 
-def evidence(checks=None, compatibility=None):
-    return json.dumps(dict(service={**dict.fromkeys(SERVICE_CHECKS, True), **(checks or {})},
-                           compatibility={'compatible': True, 'disjoint_from': [], **(compatibility or {})}),
-                      sort_keys=True)
-
-
-def offer(service, departure, ledger=(), **overrides):
+def offer(service, departure, **certificate):
     # Synthetic certificate data is used only for lifecycle unit checks. Real
-    # numerical evidence is exercised by the fresh-kernel integration runner.
-    return CorridorOffer(f'{service.client}-{departure}', service, METHOD.service_contracts(service)[0],
-                         departure, F(departure+METHOD.LEASE), snapshot_id(ledger), '', '', evidence(**overrides))
+    # numerical evidence is exercised by the fresh-kernel notebook run.
+    evidence = Certificate(**{'capability': True, 'window_applies': True, 'compatible': True, **certificate})
+    return CorridorOffer(service, METHOD.service_contracts(service)[0], departure,
+                         F(departure+METHOD.LEASE), evidence)
 
 
-def synthetic_base(directory):
+def synthetic_base(capability=True):
     """Unit-test data only: an eastbound band of cells for the whole horizon.
 
     Westbound (the rotation by pi) occupies a band two cells away, so opposite
@@ -48,27 +40,25 @@ def synthetic_base(directory):
     """
     reserved = np.zeros((37, 6, 10), bool)
     reserved[:, :, 1:4] = True
-    path = Path(directory)/'base.npz'
-    np.savez(path, reserved=reserved)
-    return dict(reserved=reserved, dt=.25, path=str(path), digest=file_digest(path),
-                service_checks=dict.fromkeys(SERVICE_CHECKS[:-1], True), output=str(directory))
+    return dict(reserved=reserved, dt=.25, capability=capability)
+
+
+def run_synthetic():
+    ledger, attempts = (), []
+    for spec in METHOD.REQUESTS:
+        attempts.append(METHOD.attempt(spec, ledger, synthetic_base()))
+        ledger = attempts[-1]['result'].ledger
+    return attempts, ledger
 
 
 class CorridorProtocolTests(unittest.TestCase):
-    def run_synthetic(self, directory=None):
-        if directory is not None:
-            attempts, ledger = run_scenario(ROOT, synthetic_base(directory), METHOD)
-            return attempts, ledger, outcome_summary(attempts)
-        with tempfile.TemporaryDirectory() as directory:
-            return self.run_synthetic(directory)
-
     def test_bargaining_is_identical_to_charging_on_equivalent_utilities(self):
         original = load_method_notebook(ROOT/'notebooks'/'protocol.ipynb').bargain
         adapted = load_bargain(ROOT)
         service = CrossingService('B', 'west', (0, 1), 9)
         corridors = tuple(offer(service, s) for s in service.departures)
         bookings = tuple(CertifiedOffer(Booking(1, P.closedopen(s, s+8)),
-                         Certificate(True, True, True, True, True)) for s in service.departures)
+                         protocol.Certificate(True, True, True, True, True)) for s in service.departures)
         def execute(method, family, price_failure):
             policies = affine_policies(dict(zip(family, map(F, [5, 2]))),
                                         dict(zip(family, map(F, [1, 0] if price_failure else [10, 8]))))
@@ -81,82 +71,65 @@ class CorridorProtocolTests(unittest.TestCase):
             self.assertEqual(execute(original, bookings, failure), execute(adapted, corridors, failure))
 
     def test_notebook_stages_reproduce_scenario_outcomes(self):
-        attempts, ledger, summary = self.run_synthetic()
-        self.assertEqual([row[:2] for row in summary],
-                         [('A', 'COMMITTED'), ('B', 'COMMITTED'), ('C', 'NO-COMPATIBLE-OFFER'),
-                          ('D', 'PRICE-NO-BLA'), ('E', 'COMMITTED')])
-        self.assertEqual([(row[3], row[4]) for row in summary],
-                         [(0, F(15, 2)), (0, F(15, 2)), (None, None), (None, None), (20, F(15, 2))])
-        self.assertEqual([len(row[2]) for row in summary], [1, 2, 0, 2, 1])
+        attempts, ledger = run_synthetic()
+        self.assertEqual([a['result'].status for a in attempts],
+                         ['COMMITTED', 'COMMITTED', 'NO-BLA', 'NO-BLA', 'COMMITTED'])
+        self.assertEqual([None if a['result'].agreement is None else
+                          (a['result'].agreement.offer.departure, a['result'].agreement.price) for a in attempts],
+                         [(0, F(15, 2)), (0, F(15, 2)), None, None, (20, F(15, 2))])
+        self.assertEqual([len(a['offers']) for a in attempts], [1, 2, 0, 2, 1])
         self.assertEqual([b.offer.service.client for b in ledger], ['A', 'B', 'E'])
-        self.assertTrue(all(a['previous_preserved'] for a in attempts))
-        # Offer identities are deterministic for one artifact directory, so a
-        # second serial run there (the notebook's runner check) agrees exactly.
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(self.run_synthetic(directory)[2], self.run_synthetic(directory)[2])
+        self.assertIsNone(attempts[2]['admission'])  # C meets A's reservation at every departure
 
     def test_admission_retains_contracts_and_rebuilds_them_for_adaptations(self):
-        attempts, _, _ = self.run_synthetic()
+        attempts, _ = run_synthetic()
         for a in attempts:
-            for s in a['admission'].services:
-                self.assertEqual(s.quotient.assumption, normalize(~s.S_a | s.T))
-                self.assertEqual(s.quotient.guarantee, normalize(s.S_a))
-                self.assertEqual(normalize(s.obligations.guarantee),
-                                 normalize(a['admission'].commitment.guarantee & s.S_a))
-        E = attempts[4]['admission']
-        original, adapted = E.services
-        # F_20 stays in S_a; the independent speed bound refutes it for d=22.
-        self.assertEqual(normalize(original.S_a), original.service.access_for(20))
-        self.assertEqual(normalize(adapted.S_a), adapted.service.access_for(20))
-        self.assertNotEqual(original.T, adapted.T)  # the task's until window ends at d
-        self.assertEqual([c.status for c in original.candidates], ['PROVED_IMPOSSIBLE'])
-        self.assertIs(E.selected, adapted)
+            s = a['admission']
+            if s is None:
+                continue
+            T = s.service.task
+            self.assertEqual(s.quotient.assumption, normalize(~s.access | T))
+            self.assertEqual(s.quotient.guarantee, normalize(s.access))
+            self.assertEqual(normalize(s.obligations.guarantee), normalize(s.commitment.guarantee & s.access))
+        # E's original deadline leaves no room for the certified window; the permitted one does.
+        E = attempts[4]
+        original, adapted = E['request'].services
+        self.assertIs(E['admission'].service, adapted)
+        self.assertIsNone(METHOD.admit(CrossingRequest('E', original), (), synthetic_base()))
+        self.assertNotEqual(original.task, adapted.task)  # the task's until window ends at d
         B = attempts[1]
-        self.assertTrue(all(o.service is B['admission'].selected.service for o in B['offers']))
-        self.assertTrue(all(o.access == B['admission'].selected.S_a for o in B['offers']))
-        self.assertTrue(all(o.snapshot == B['admission'].snapshot for o in B['offers']))
+        self.assertTrue(all(o.service is B['admission'].service for o in B['offers']))
+        self.assertTrue(all(o.access == B['admission'].access for o in B['offers']))
 
     def test_offers_refine_quotient_and_compose_to_the_task(self):
-        attempts, _, _ = self.run_synthetic()
-        B = attempts[1]
-        admission, selected = B['admission'], B['admission'].selected
-        for o in B['offers']:
+        attempts, _ = run_synthetic()
+        admission = attempts[1]['admission']
+        for o in attempts[1]['offers']:
             K, C_cmt = o.contract, admission.commitment
-            self.assertTrue(implies(K.guarantee, selected.S_a))
-            self.assertTrue(refines(K, selected.quotient))
-            self.assertTrue(refines(C_cmt.conjoin(K), selected.obligations))
-            self.assertTrue(refines(selected.client.compose(C_cmt.conjoin(K)), C_cmt.conjoin(selected.task)))
+            self.assertTrue(implies(K.guarantee, admission.access))
+            self.assertTrue(refines(K, admission.quotient))
+            self.assertTrue(refines(C_cmt.conjoin(K), admission.obligations))
+            self.assertTrue(refines(admission.client_contract.compose(C_cmt.conjoin(K)),
+                                    C_cmt.conjoin(admission.task)))
         # Boolean algebra alone cannot see C's geometric conflict with A.
-        conflict = attempts[2]['admission'].services[0].candidates[0]
-        H = il.Proposition(f'H_{conflict.offer_id}')
-        F_C = attempts[2]['admission'].services[0].service.access_for(conflict.departure)
-        self.assertNotEqual(normalize(attempts[2]['admission'].commitment.guarantee & H & F_C), il.Boolean(False))
+        conflict = offer(attempts[2]['request'].service, 0)
+        self.assertNotEqual(normalize(attempts[2]['result'].commitment.guarantee & conflict.contract.guarantee),
+                            il.Boolean(False))
 
-    def test_false_evidence_cannot_qualify_an_offer(self):
+    def test_missing_capability_admits_nothing(self):
+        request = METHOD.REQUESTS[0]['request']
+        self.assertIsNone(METHOD.admit(request, (), synthetic_base(capability=False)))
+
+    def test_uncertified_offers_cannot_be_bargained(self):
         service = CrossingService('B', 'west', (0, 1), 9)
-        certify_service(offer(service, 0))
-        for key in SERVICE_CHECKS:
+        args = ({'owner': 1, 'client': 1}, {'owner': 0, 'client': 0}, (0, 10), 3)
+        validate_corridors((offer(service, 0),), *args)
+        for key in ('capability', 'window_applies', 'compatible'):
             with self.subTest(key=key), self.assertRaises(ValueError):
-                certify_service(offer(service, 0, checks={key: False}))
-        for broken in ({'compatible': False}, {'disjoint_from': [{'offer': 'x', 'disjoint': False}]}):
-            with self.assertRaises(ValueError):
-                certify_compatibility(offer(service, 0, compatibility=broken))
-            with self.assertRaises(ValueError):
-                validate_corridors((offer(service, 0, compatibility=broken),), {'owner': 1, 'client': 1},
-                                   {'owner': 0, 'client': 0}, (0, 10), 3)
+                validate_corridors((offer(service, 0, **{key: False}),), *args)
         # Capability evidence for one departure does not reach another departure's access predicate.
         with self.assertRaises(ValueError):
-            certify_service(replace(offer(service, 1), access=service.access_for(0)))
-
-    def test_failure_meanings_stay_distinct(self):
-        service = CrossingService('F', 'east', (0, 1), 9)
-        def admission(*statuses):
-            candidates = tuple(Candidate(s, f'id{s}', dict(status=status)) for s, status in enumerate(statuses))
-            return Admission(None, '', standing(()), (ServiceAdmission(service, *[None]*6, candidates),))
-        self.assertEqual(admission('PROVED_IMPOSSIBLE', 'PROVED_IMPOSSIBLE').failure, 'PROVED-IMPOSSIBLE')
-        self.assertEqual(admission('GEOMETRIC_CONFLICT', 'PROVED_IMPOSSIBLE').failure, 'NO-COMPATIBLE-OFFER')
-        self.assertEqual(admission('UNRESOLVED', 'PROVED_IMPOSSIBLE').failure, 'UNRESOLVED')
-        self.assertIsNone(admission('QUALIFIED', 'UNRESOLVED').failure)
+            validate_corridors((replace(offer(service, 1), access=service.access_for(0)),), *args)
 
     def test_client_model_stays_fixed_across_offers(self):
         service = CrossingService('B', 'west', (0, 1), 9)
@@ -168,22 +141,22 @@ class CorridorProtocolTests(unittest.TestCase):
                 validate_corridors((family[0], invalid), {'owner': 1, 'client': 1},
                                    {'owner': 0, 'client': 0}, (0, 10), 3)
 
-    def test_exact_commit_stale_snapshot_and_no_bla_preservation(self):
-        service = CrossingService('A', 'east', (0,), 8)
-        chosen = offer(service, 0)
+    def test_exact_commit_and_no_bla_preservation(self):
+        request = METHOD.REQUESTS[0]['request']
+        admission = METHOD.admit(request, (), synthetic_base())
+        offers = METHOD.generate(admission, synthetic_base())
         bargain = load_bargain(ROOT)
-        result = bargain((chosen,), affine_policies({chosen: F(1)}, {chosen: F(10)}),
+        result = bargain(offers, affine_policies({offers[0]: F(1)}, {offers[0]: F(10)}),
                          {'owner': F(2), 'client': F(2)}, {'owner': F(0), 'client': F(0)})
-        ledger = commit_exact((chosen,), result, (), lambda o: None)
-        self.assertIs(ledger[-1].offer, result.agreement.offer)
-        self.assertEqual(ledger[-1].price, result.agreement.price)
-        with self.assertRaises(ValueError):
-            commit_exact((chosen,), result, ledger, lambda o: None)
-        clone = replace(chosen)
-        with self.assertRaises(ValueError):
-            commit_exact((clone,), replace(result, offers=(clone,)), (), lambda o: None)
-        declined = BargainingResult('NO-BLA', None, (), (chosen,))
-        self.assertIs(commit_exact((chosen,), declined, ledger, lambda o: None), ledger)
+        committed = METHOD.commit(admission, offers, result, admission.commitment)
+        self.assertIs(committed.ledger[-1].offer, result.agreement.offer)
+        self.assertEqual(committed.ledger[-1].price, result.agreement.price)
+        with self.assertRaises(ValueError):  # the commitment moved on after admission
+            METHOD.commit(admission, offers, result, committed.commitment, committed.ledger)
+        declined = BargainingResult('NO-BLA', None, (), offers)
+        unchanged = METHOD.commit(admission, offers, declined, committed.commitment, committed.ledger)
+        self.assertEqual(unchanged.ledger, committed.ledger)
+        self.assertEqual(unchanged.commitment, committed.commitment)
 
 
 class NotebookModelTests(unittest.TestCase):
@@ -200,36 +173,8 @@ class NotebookModelTests(unittest.TestCase):
         self.assertEqual(S_a, il.Or((service.access_for(0), service.access_for(1))))
         self.assertEqual(normalize(R_task.quotient(C_client).guarantee), normalize(S_a))
 
-    def test_zero_input_execution_reaches_the_exit_in_the_lane(self):
-        M = METHOD
-        times, states, inputs = M.execute(lambda t, z: (0., 0.))
-        self.assertTrue(M.inside(states[-1], M.LANE, M.EXIT_ZONE))
-        self.assertAlmostEqual(times[-1], 6.675)  # 3.0 m at 0.45 m/s, in 0.025 s steps
-        self.assertTrue(all(M.inside(z, M.LANE) for z in states))
-        np.testing.assert_allclose(states[:, 1:], np.tile(M.ENTRY[1:], (len(states), 1)))
-        self.assertFalse(M.inside((-1.6, -.9, 0., M.SPEED), M.LANE))
-
-    def test_hj_feedback_minimizes_the_hamiltonian(self):
-        M = METHOD
-        policy = M.hj_feedback(lambda t, z: (1., -1.))
-        self.assertEqual(policy(0, M.ENTRY), (M.CONTROLS['min_steer'], M.CONTROLS['max_accel']))
-        self.assertEqual(M.hj_feedback(lambda t, z: (0., 0.))(0, M.ENTRY), (0., 0.))
-
-    def test_bicycle4d_is_the_solver_model(self):
-        try:
-            from pyspect.systems.hj_reachability import Bicycle4D
-        except ImportError:
-            self.skipTest('needs pyspect[hj_reachability]')
-        M = METHOD
-        solver = Bicycle4D(**M.CONTROLS, wheelbase=M.WHEELBASE)
-        samples = np.random.default_rng(0).uniform([-2, -2, -.5, .3, -.15, -.15], [2, 2, .5, .6, .15, .15], (50, 6))
-        for z in samples:
-            np.testing.assert_allclose(M.bicycle4d(z[:4], z[4:]), np.asarray(solver(z[:4], z[4:], np.zeros(4), 0.)),
-                                       atol=1e-6)
-
     def test_deadline_relations(self):
-        M = METHOD
-        self.assertTrue(M.certified_window_applies(0, 8))
-        self.assertFalse(M.certified_window_applies(30, 37))
-        self.assertTrue(M.speed_bound_excludes(20, 22))   # 0.6 * 2 < 3
-        self.assertFalse(M.speed_bound_excludes(20, 25))  # 0.6 * 5 >= 3
+        self.assertTrue(METHOD.certified_window_applies(0, 8))
+        self.assertFalse(METHOD.certified_window_applies(30, 37))
+        self.assertFalse(METHOD.certified_window_applies(20, 22))
+        self.assertTrue(METHOD.certified_window_applies(20, 28))

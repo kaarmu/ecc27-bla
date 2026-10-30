@@ -4,23 +4,14 @@ The client's task is a structured interval_logic formula over interpreted state
 atoms (road, exit, allocation), so the notebook can generate reachability
 queries from it. The capability predicates F_s and promises H_kappa are atoms;
 Boolean normalization cannot infer entailments between atoms under the
-dynamics, so those are recorded as separate evidence.
+dynamics, so the capability is recorded as separate evidence.
 """
 from dataclasses import dataclass
 from fractions import Fraction as F
-from hashlib import sha256
-import json
 
 import interval_logic as il
 import portion as P
 from protocol import Contract, normalize
-
-SERVICE_CHECKS = ('capability', 'policy_on_road', 'policy_in_allocation', 'policy_reaches_exit',
-                  'policy_inputs_bounded', 'window_within_deadline')
-
-
-def digest(value):
-    return sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
 def latex_atom(name):
@@ -41,11 +32,6 @@ class CrossingService:
                 or tuple(sorted(set(self.departures))) != self.departures
                 or self.deadline <= max(self.departures)):
             raise ValueError('invalid crossing service')
-
-    @property
-    def key(self):
-        return digest(dict(client=self.client, route=self.route,
-                           departures=self.departures, deadline=self.deadline))[:16]
 
     @property
     def road(self):
@@ -101,69 +87,38 @@ class CrossingRequest:
         return (self.service, *self.alternatives)
 
 
-@dataclass(frozen=True, eq=False)
-class Candidate:
-    """One finite template's qualification reply, kept with its meaning."""
-    departure: int
-    offer_id: str
-    reply: dict
-
-    @property
-    def status(self):
-        return self.reply['status']
-
-
-@dataclass(frozen=True, eq=False)
-class ServiceAdmission:
+@dataclass(frozen=True)
+class Admission:
+    request: CrossingRequest
     service: CrossingService
-    S_a: il.Formula
-    T: il.Formula
-    client: Contract
+    access: il.Formula  # S_a, fixed for the whole offer family
+    client_contract: Contract
     task: Contract
     quotient: Contract
     obligations: Contract
-    candidates: tuple[Candidate, ...]
-
-    @property
-    def qualified(self):
-        return tuple(c for c in self.candidates if c.status == 'QUALIFIED')
-
-
-@dataclass(frozen=True, eq=False)
-class Admission:
-    request: CrossingRequest
-    snapshot: str
+    feasible_departures: tuple[int, ...]
     commitment: Contract
-    services: tuple[ServiceAdmission, ...]
+
+
+@dataclass(frozen=True)
+class Certificate:
+    """Capability evidence for H_kappa ⊨ F_s, and compatibility inherited from admission."""
+    capability: bool       # the query generated from F_s with alloc := R_kappa holds at the entry state
+    window_applies: bool   # its window [s, s+lease] lies within [s, d]
+    compatible: bool       # R_kappa is disjoint from every standing reservation
 
     @property
-    def selected(self):
-        return next((s for s in self.services if s.qualified), None)
-
-    @property
-    def failure(self):
-        """Why no family exists; an empty family alone is not impossibility."""
-        if self.selected is not None:
-            return None
-        statuses = {c.status for s in self.services for c in s.candidates}
-        if statuses == {'PROVED_IMPOSSIBLE'}:
-            return 'PROVED-IMPOSSIBLE'
-        if 'GEOMETRIC_CONFLICT' in statuses:
-            return 'NO-COMPATIBLE-OFFER'
-        return 'UNRESOLVED'
+    def certified(self):
+        return self.capability and self.window_applies
 
 
 @dataclass(frozen=True)
 class CorridorOffer:
-    id: str
     service: CrossingService
     access: il.Formula  # the selected service's fixed S_a, shared by the whole family
     departure: int
     end: F
-    snapshot: str
-    artifact: str
-    artifact_digest: str
-    evidence_json: str
+    certificate: Certificate
 
     @property
     def start(self):
@@ -172,17 +127,13 @@ class CorridorOffer:
     @property
     def promise(self):
         """H_kappa: the allocation covers the entire inflated reservation."""
-        return il.Proposition(f'H_{self.id}')
+        return il.Proposition(f'H_{self.service.client}_{self.departure}')
 
     @property
     def contract(self):
         # K_kappa = <T | H_kappa and F_s>: the capability predicate is the
         # explicit consequence of the promise, decided by the generated query.
         return Contract(True, self.promise & self.service.access_for(self.departure))
-
-    @property
-    def evidence(self):
-        return json.loads(self.evidence_json)
 
     @property
     def symbols(self):
@@ -198,10 +149,6 @@ class CorridorBLA:
     @property
     def contract(self):
         return self.offer.contract
-
-
-def snapshot_id(ledger):
-    return digest([(b.offer.id, b.offer.artifact_digest, str(b.price)) for b in ledger])
 
 
 def standing(ledger):
@@ -226,51 +173,3 @@ def implies(left, right):
 def refines(first, second):
     """C1 <= C2: A2 implies A1 and G1 implies G2 (saturated guarantees)."""
     return implies(second.assumption, first.assumption) and implies(first.guarantee, second.guarantee)
-
-
-def certify_service(offer):
-    """Service evidence first, then the Boolean implication to the fixed S_a.
-
-    The implication is algebraic only because K_kappa names F_s explicitly;
-    its redundancy given H_kappa rests on the capability evidence (the query
-    generated from F_s with the allocation set to R_kappa) and the declared
-    client's execution of it.
-    """
-    service = offer.evidence.get('service', {})
-    missing = [k for k in SERVICE_CHECKS if service.get(k) is not True]
-    if missing:
-        raise ValueError(f'offer lacks service evidence: {", ".join(missing)}')
-    if not implies(offer.contract.guarantee, offer.access):
-        raise ValueError('offer does not imply the fixed sufficient-access predicate')
-
-
-def certify_compatibility(offer):
-    """Compatibility evidence: disjoint from every standing reservation at its snapshot."""
-    compatibility = offer.evidence.get('compatibility', {})
-    if compatibility.get('compatible') is not True or not all(
-            c.get('disjoint') is True for c in compatibility.get('disjoint_from', ())):
-        raise ValueError('offer lacks compatibility evidence')
-
-
-def certify_template(offer):
-    """Both kinds of evidence; neither is substituted for the other."""
-    certify_service(offer)
-    certify_compatibility(offer)
-
-
-def commit_exact(offers, negotiation, ledger, verify_artifact):
-    ledger = tuple(ledger)
-    if negotiation.status == 'NO-BLA':
-        if negotiation.agreement is not None:
-            raise ValueError('NO-BLA cannot carry an agreement')
-        return ledger
-    pair = negotiation.agreement
-    if (negotiation.status != 'ACCEPTED' or tuple(offers) != negotiation.offers
-            or not negotiation.history or not negotiation.history[-1].accepted
-            or negotiation.history[-1].proposal != pair
-            or not any(pair.offer is o for o in offers)
-            or pair.offer.snapshot != snapshot_id(ledger)):
-        raise ValueError('stale snapshot or substituted accepted pair')
-    certify_template(pair.offer)
-    verify_artifact(pair.offer)
-    return (*ledger, CorridorBLA(pair.offer, pair.price))
