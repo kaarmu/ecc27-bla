@@ -46,6 +46,10 @@ def main():
     if args.save:
         for cell in notebook.cells:
             cell.metadata.pop('execution', None)
+            for output in cell.get('outputs', []):
+                data = output.get('data', {})
+                if 'application/vnd.plotly.v1+json' in data:
+                    data.pop('text/html', None)  # keep native Plotly data, not an embedded plotly.js
         nbformat.write(notebook, path)
     print(f'Executed {path.name}; saved outputs: {args.save}')
 
