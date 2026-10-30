@@ -19,27 +19,39 @@ def latex_atom(name):
     return r'\mathit{' + name.replace('_', r'\_') + '}'
 
 
+DIRECTIONS = ('east', 'north', 'west', 'south')
+
+
 @dataclass(frozen=True)
 class CrossingService:
+    """Enter travelling ``inbound``, leave travelling ``outbound`` (equal for straight on)."""
     client: str
-    route: str
+    inbound: str
+    outbound: str
     departures: tuple[int, ...]
     deadline: int
 
     def __post_init__(self):
-        if (not self.client.isalnum() or self.route not in ('east', 'west') or not self.departures
+        if (not self.client.isalnum() or self.inbound not in DIRECTIONS or self.outbound not in DIRECTIONS
+                or self.outbound == DIRECTIONS[(DIRECTIONS.index(self.inbound) + 2) % 4] or not self.departures
                 or any(type(s) is not int or s < 0 for s in self.departures)
                 or tuple(sorted(set(self.departures))) != self.departures
                 or self.deadline <= max(self.departures)):
             raise ValueError('invalid crossing service')
 
     @property
+    def route(self):
+        return self.inbound, self.outbound
+
+    @property
     def road(self):
-        return il.Proposition(f"road_{self.route[0]}")
+        """The roads of the route: the inbound road, and the outbound road when turning."""
+        inbound, outbound = (il.Proposition(f'road_{d[0]}') for d in self.route)
+        return inbound if self.inbound == self.outbound else inbound | outbound
 
     @property
     def exit(self):
-        return il.Proposition(f"exit_{self.route[0]}")
+        return il.Proposition(f"exit_{self.outbound[0]}")
 
     @property
     def alloc(self):
@@ -61,13 +73,13 @@ class CrossingService:
         """F_s, owner-only: the allocation admits a control input satisfying Phi_s."""
         if departure not in self.departures:
             raise ValueError('departure is outside selected service')
-        return il.Proposition(f'F_{self.client}_{self.route}_{departure}')
+        return il.Proposition(f'F_{self.client}_{self.inbound[0]}{self.outbound[0]}_{departure}')
 
     @property
     def symbols(self):
-        d = self.route[0]
         return {**{self.access_for(s).name: f'F^{{{self.client}}}_{{{s}}}' for s in self.departures},
-                self.road.name: rf'\mathit{{road}}_{d}', self.exit.name: rf'\mathit{{exit}}_{d}',
+                **{f'road_{d[0]}': rf'\mathit{{road}}_{d[0]}' for d in self.route},
+                self.exit.name: rf'\mathit{{exit}}_{self.outbound[0]}',
                 self.alloc.name: f'r_{{{self.client}}}'}
 
 

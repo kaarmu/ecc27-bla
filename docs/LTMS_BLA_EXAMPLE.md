@@ -41,22 +41,28 @@ identities by Boolean normalization), **[semantic]** (entailments under the dyna
 and the fixed client rule) or **[numerical]** (HJ membership on the declared grid).
 
 1. **Model.** The vehicle (pyspect's Bicycle4D: steering-angle and acceleration
-   bounds, route-local chart), the road as boxes over named axes, the entry state,
-   the lease and the certified-window relation $s+8\le d$. The client's task is a
+   bounds, global heading), the map of the original LTMS four-way intersection, the
+   entry states, the lease and the certified-window relation $s+8\le d$. The map is
+   one table keyed by direction of travel: heading, lane, entry zone and exit zone.
+   On its lane a vehicle keeps within $\pm\pi/5$ of the lane's heading; in the
+   octagonal centre any heading is allowed. A route enters travelling *inbound* and
+   leaves travelling *outbound* (straight on or a turn). The client's task is a
    structured formula,
-   $\Phi_s=(\mathit{road}\land\mathit{alloc}_j)\ \mathcal U_{[s,d]}\ \mathit{exit}$,
+   $\Phi_s=(\mathit{road}\land\mathit{alloc}_j)\ \mathcal U_{[s,d]}\ \mathit{exit}$
+   with $\mathit{road}=\mathit{road}_{\rm in}\lor\mathit{road}_{\rm out}$,
    read at departure $s$ from the entry state, and $T_\theta=\bigvee_s\Phi_s$. The
    capability predicate $F_s(r_j)$ ("some input satisfies $\Phi_s$ under the
    allocation $r_j$") is owner-only, and sufficient access is $S_a=\bigvee_s F_s$.
-2. **Environment, generator and query.** The grid; the map regions as pyspect set
-   builders. The four LTMS passes, the lane strip and the projection/inflation
+2. **Environment, generator and query.** The grid; the map as pyspect set
+   builders, plotted with pyspect's bitmap plotting. Per route, the four LTMS
+   passes, the lane strips (and the centre, for a turn) and the projection/inflation
    *generate* the candidate reservation $R_\kappa$; they are the owner's heuristic,
    not evidence. `ltms_bla.tlt.compile_query` generates the TLT from $\Phi_0$ with
    $\mathit{alloc}:=R_\kappa$ (as a signed-distance level set). Because
    $\mathit{alloc}$ occurs only positively, $F_s$ is monotone in the allocation, so
    $H_\kappa\vDash F_s$ exactly when $F_s(R_\kappa)$, which the realized value at the
-   entry state decides. One query serves every template: the dynamics are
-   time-invariant and the map is symmetric under rotation by pi.
+   entry state decides. One query per route serves every departure: the dynamics
+   are time-invariant.
 3. **Contracts, admission and offers.** Cells tagged `definitions` hold the method:
    the model cells, `service_contracts`, `admit`, `generate`, `commit`, `attempt` and
    the scenario inputs. $C_{\rm client}=\langle S_a\mid T_\theta\rangle$,
@@ -81,11 +87,11 @@ Five serial requests, all negotiated at frozen virtual decision time zero:
 
 | Client | Intended case | Outcome |
 | --- | --- | --- |
-| A | First eastbound crossing. | `COMMITTED` |
-| B | Two westbound alternatives for one fixed service, during A's lease. | `COMMITTED` |
-| C | Same-lane templates incompatible with A's reservation: no feasible departure. | `NO-BLA` |
-| D | Feasible later templates, rejected through price bargaining. | `NO-BLA` |
-| E | Original deadline too short for the certified window; a permitted later service is accepted. | `COMMITTED` |
+| A | First crossing, east. | `COMMITTED` |
+| B | Two westbound alternatives for one fixed service, in the opposite lane during A's lease. | `COMMITTED` |
+| C | Northbound, crossing A and B in the centre: no feasible departure. | `NO-BLA` |
+| D | Southbound, feasible later templates, rejected through price bargaining. | `NO-BLA` |
+| E | Left turn east → north; original deadline too short for the certified window; a permitted later service is accepted. | `COMMITTED` |
 
 `ltms_reachability` supplies the four LTMS passes and the pyspect
 constrained-until TLT. `protocol.Contract` and `normalize` derive the quotient and
@@ -100,9 +106,10 @@ presentation. Prices are outside the guarantees.
 
 ## Mathematical scope
 
-The plant is a kinematic bicycle with state `(x,y,h,v)` on an eastbound
-route-local heading chart; westbound uses its rotation by pi. Vehicles are points.
-The grid is `(37,31,61,9,7)` over `(t,x,y,h,speed)`.
+The plant is a kinematic bicycle with state `(x,y,h,v)` and a global, periodic
+heading axis covering one turn from -3π/4, so no lane's heading band wraps.
+Vehicles are points. The grid is `(37,41,41,16,5)` over `(t,x,y,h,speed)`, and each
+route used by the scenario is solved on it.
 
 The query is generated only from the supported fragment: Boolean combinations of
 interpreted state atoms and one bounded until with a closed absolute window read

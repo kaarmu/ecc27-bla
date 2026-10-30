@@ -33,14 +33,16 @@ def offer(service, departure, **certificate):
 
 
 def synthetic_base(capability=True):
-    """Unit-test data only: an eastbound band of cells for the whole horizon.
+    """Unit-test data only: each lane is a band of cells for the whole horizon.
 
-    Westbound (the rotation by pi) occupies a band two cells away, so opposite
-    directions never meet and same-direction leases meet whenever they overlap.
+    Opposite directions use separate bands and never meet; crossing directions
+    meet whenever their leases overlap, and a turn reserves both of its lanes.
     """
-    reserved = np.zeros((37, 6, 10), bool)
-    reserved[:, :, 1:4] = True
-    return dict(reserved=reserved, dt=.25, capability=capability)
+    lanes = {d: np.zeros((37, 10, 10), bool) for d in ('east', 'north', 'west', 'south')}
+    lanes['east'][:, :, 1:4] = lanes['west'][:, :, 6:9] = True
+    lanes['north'][:, 6:9, :] = lanes['south'][:, 1:4, :] = True
+    routes = {(a, b): dict(reserved=lanes[a] | lanes[b], capability=capability) for a in lanes for b in lanes}
+    return dict(dt=.25, routes=routes)
 
 
 def run_synthetic():
@@ -55,7 +57,7 @@ class CorridorProtocolTests(unittest.TestCase):
     def test_bargaining_is_identical_to_charging_on_equivalent_utilities(self):
         original = load_method_notebook(ROOT/'notebooks'/'protocol.ipynb').bargain
         adapted = load_bargain(ROOT)
-        service = CrossingService('B', 'west', (0, 1), 9)
+        service = CrossingService('B', 'west', 'west', (0, 1), 9)
         corridors = tuple(offer(service, s) for s in service.departures)
         bookings = tuple(CertifiedOffer(Booking(1, P.closedopen(s, s+8)),
                          protocol.Certificate(True, True, True, True, True)) for s in service.departures)
@@ -121,7 +123,7 @@ class CorridorProtocolTests(unittest.TestCase):
         self.assertIsNone(METHOD.admit(request, (), synthetic_base(capability=False)))
 
     def test_uncertified_offers_cannot_be_bargained(self):
-        service = CrossingService('B', 'west', (0, 1), 9)
+        service = CrossingService('B', 'west', 'west', (0, 1), 9)
         args = ({'owner': 1, 'client': 1}, {'owner': 0, 'client': 0}, (0, 10), 3)
         validate_corridors((offer(service, 0),), *args)
         for key in ('capability', 'window_applies', 'compatible'):
@@ -132,10 +134,10 @@ class CorridorProtocolTests(unittest.TestCase):
             validate_corridors((replace(offer(service, 1), access=service.access_for(0)),), *args)
 
     def test_client_model_stays_fixed_across_offers(self):
-        service = CrossingService('B', 'west', (0, 1), 9)
+        service = CrossingService('B', 'west', 'west', (0, 1), 9)
         family = tuple(offer(service, s) for s in service.departures)
         self.assertIs(family[0].service, family[1].service)
-        for invalid in (replace(family[1], service=CrossingService('C', 'west', (0, 1), 9)),
+        for invalid in (replace(family[1], service=CrossingService('C', 'west', 'west', (0, 1), 9)),
                         replace(family[1], access=service.access_for(1))):
             with self.assertRaises(ValueError):
                 validate_corridors((family[0], invalid), {'owner': 1, 'client': 1},
@@ -162,7 +164,7 @@ class CorridorProtocolTests(unittest.TestCase):
 class NotebookModelTests(unittest.TestCase):
     """The notebook's model cells, exercised directly."""
     def test_task_formula_keeps_its_physical_structure(self):
-        service = CrossingService('B', 'west', (0, 1), 9)
+        service = CrossingService('B', 'west', 'west', (0, 1), 9)
         phi = service.task_for(1)
         self.assertIsInstance(phi, il.Until)
         self.assertEqual(phi.left, il.Proposition('road_w') & il.Proposition('alloc_B'))
@@ -172,6 +174,14 @@ class NotebookModelTests(unittest.TestCase):
         S_a, T, C_client, R_task = METHOD.service_contracts(service)
         self.assertEqual(S_a, il.Or((service.access_for(0), service.access_for(1))))
         self.assertEqual(normalize(R_task.quotient(C_client).guarantee), normalize(S_a))
+
+    def test_a_turn_uses_both_roads_and_exits_on_the_outbound_one(self):
+        turn = CrossingService('E', 'east', 'north', (0,), 8)
+        self.assertEqual(turn.task_for(0).left,
+                         (il.Proposition('road_e') | il.Proposition('road_n')) & il.Proposition('alloc_E'))
+        self.assertEqual(turn.exit, il.Proposition('exit_n'))
+        with self.assertRaises(ValueError):  # no U-turns
+            CrossingService('E', 'east', 'west', (0,), 8)
 
     def test_deadline_relations(self):
         self.assertTrue(METHOD.certified_window_applies(0, 8))
