@@ -1,1 +1,1 @@
-"""Notebook companion for the illustrative corridor-valued BLA scenario."""
+"""Notebook companion for the corridor-valued BLA scenario of Sec. IV."""

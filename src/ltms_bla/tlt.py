@@ -3,7 +3,7 @@
 The contracts state physical predicates as interval_logic formulas over named
 state atoms. ``compile_query`` translates the supported fragment into a pyspect
 TLT: Boolean combinations of state atoms become one exactly realized set
-(intersection and union of their interpretations), and each bounded until read
+(intersection, union and complement of their interpretations), and each bounded until read
 at a fixed anchor becomes a TLT until node. Anything else is refused rather
 than approximated.
 """
@@ -11,7 +11,7 @@ import interval_logic as il
 import portion as P
 from interval_logic.temporal import AbsoluteParameter
 from pyspect import TLT, UNTIL, ContLTL
-from pyspect.set_builder import BoxSet, Inter, Union
+from pyspect.set_builder import BoxSet, Compl, Inter, Union
 
 
 def _time(value):
@@ -24,6 +24,8 @@ def state_set(formula, interpretation):
         if formula.name not in interpretation:
             raise ValueError(f'no interpretation for atom {formula.name}')
         return interpretation[formula.name]
+    if isinstance(formula, il.Not):
+        return Compl(state_set(formula.operand, interpretation))
     if isinstance(formula, (il.And, il.Or)):
         join = Inter if isinstance(formula, il.And) else Union
         parts = [state_set(child, interpretation) for child in formula.operands]

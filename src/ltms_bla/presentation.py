@@ -1,11 +1,15 @@
 """Markdown tables with display symbols, without importing JAX."""
 from protocol import fmt
-from .records import latex_atom
 
 try:
     from IPython.display import Markdown, display
 except ImportError:
     Markdown, display = str, print
+
+
+def latex_atom(name):
+    """The default interval_logic LaTeX rendering of a proposition name."""
+    return r'\mathit{' + name.replace('_', r'\_') + '}'
 
 
 def latex(value, symbols=None):
