@@ -1,0 +1,650 @@
+{
+ "summary": {
+  "seed": 0,
+  "round_budget": 4,
+  "price_grid": "€0..€20 step €1",
+  "owner": {
+   "target": "6",
+   "minimum": "1",
+   "kappa": "1"
+  },
+  "model": "point vehicle (x, y, h, v) with a disk body of radius 0.075 m; clearance 2·0.075 m",
+  "samples_per_vehicle": 25,
+  "control_grid": "9x9",
+  "substeps": 10,
+  "tolerance": 2e-05,
+  "checks": {
+   "2 certified: notebook covers = independent coverage": {
+    "evaluated": 3,
+    "violations": 0
+   },
+   "2 offer certified: E_in×J covered": {
+    "evaluated": 2,
+    "violations": 0
+   },
+   "2 offer certified: within C_j, E_in→E_out": {
+    "evaluated": 2,
+    "violations": 0
+   },
+   "2 offer compatible: avoids D_j": {
+    "evaluated": 2,
+    "violations": 0
+   },
+   "S1 candidates order-independent, inputs untouched": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "3 no computation after admission": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "3 commit = priced offer (ID, tube hash)": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "3 committed tubes unchanged": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "4 validators": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "4 bargain/commit = protocol.ipynb code": {
+    "evaluated": 1,
+    "violations": 0
+   },
+   "5 non-blocking: driving limits nonempty": {
+    "evaluated": 1,
+    "violations": 1
+   },
+   "6 sampled: entry state in corridor": {
+    "evaluated": 25,
+    "violations": 0
+   },
+   "6 sampled: stays in corridor": {
+    "evaluated": 25,
+    "violations": 14
+   },
+   "6 sampled: not blocked": {
+    "evaluated": 25,
+    "violations": 3
+   },
+   "6 sampled: exits through E_out in K": {
+    "evaluated": 25,
+    "violations": 3
+   }
+  },
+  "violations": [
+   "5 non-blocking: driving limits nonempty: request A: 311/13921 cells",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: not blocked: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: exits through E_out in K: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: not blocked: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: exits through E_out in K: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 4.35, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.275, 'blocked': None, 'exited': 6.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 7.05, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 6.35, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
+   "6 sampled: not blocked: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
+   "6 sampled: exits through E_out in K: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 5.025, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 2.175, 'blocked': None, 'exited': 6.0}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 5.1, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 5.85, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 6.525, 'blocked': None, 'exited': 7.25}",
+   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 6.05, 'blocked': None, 'exited': 7.25}"
+  ],
+  "branches": {
+   "as requested, accepted": true,
+   "simultaneous non-conflicting pair": false,
+   "NO-BLA, budget exhausted": false,
+   "rejected on price, then accepted": false,
+   "last: AIM rejects, adapted, ~3 offers, accepted": false
+  },
+  "comparison": {
+   "charging": {
+    "access": "fixed booking window: □_[s,s+d) acc = k",
+    "satisfiability": "exact interval arithmetic and contract normalization (decide_booking)",
+    "offer_parameter": "start s ∈ J ∩ residual",
+    "median_request_ms": 32.923540798947215
+   },
+   "intersection": {
+    "access": "time-state corridor Φ_j ⊆ (t, x, y, h, v) grid; R = □(X → Φ_j)",
+    "satisfiability": "pyspect TLT / HJ reachability on a grid (sat∃(φ_j), passes 3–4)",
+    "offer_parameter": "exit window K",
+    "median_request_s": 4.338615667074919,
+    "median_corridor_s": 0.6582016441971064
+   }
+  },
+  "committed": []
+ },
+ "requests": [
+  {
+   "request": "A",
+   "branch": "as requested, accepted",
+   "received": -5.0,
+   "theta": {
+    "route": "east→east",
+    "manoeuvre": "straight",
+    "J": [
+     0.0,
+     0.5
+    ]
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "20",
+    "gamma": "1/2",
+    "kappa": "1",
+    "targets": {
+     "owner": "6",
+     "client": "5"
+    },
+    "minima": {
+     "owner": "1",
+     "client": "1"
+    }
+   },
+   "standing": [],
+   "commitment_version": {
+    "n": 0,
+    "digest": "4f53cda18c2baa0c"
+   },
+   "tried": [
+    {
+     "J": [
+      0.0,
+      0.5
+     ],
+     "fate": "admitted"
+    }
+   ],
+   "entry_condition_as_requested": true,
+   "baseline_aim": "reserve",
+   "admission": "as requested",
+   "J_admitted": [
+    0.0,
+    0.5
+   ],
+   "offers": {
+    "exit_windows_tried": 3,
+    "generated": 3,
+    "certified": 2,
+    "compatible": 3,
+    "offered": [
+     "2f3fa8a271c7220f",
+     "49d30c14e568acc6"
+    ]
+   },
+   "candidates": [
+    {
+     "id": "c0192d1260de3076",
+     "theta": {
+      "client": "A",
+      "inbound": "east",
+      "outbound": "east",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      5.25,
+      6.25
+     ],
+     "candidate": 1,
+     "tube": {
+      "sha256": "5d98d64f2b76f323f0b363604cdf35b9fc352ef1bf3decd042c52b5b1f81a351",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 563,
+     "volume_m2s": "563/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 0,
+      "digest": "4f53cda18c2baa0c"
+     },
+     "evidence": {
+      "certified": false,
+      "cells_0_lt_V_le_tol": 684,
+      "coverage_independent": false,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       6.25
+      ],
+      "conflict_cells": {},
+      "compatible": true
+     }
+    },
+    {
+     "id": "2f3fa8a271c7220f",
+     "theta": {
+      "client": "A",
+      "inbound": "east",
+      "outbound": "east",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      6.0,
+      7.25
+     ],
+     "candidate": 2,
+     "tube": {
+      "sha256": "ec197a9db735c67d076b26a9fb9b16c4eb84b366fdfd23ab9b5af034c80d0065",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1234,
+     "volume_m2s": "617/200",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 0,
+      "digest": "4f53cda18c2baa0c"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 1609,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       7.25
+      ],
+      "conflict_cells": {},
+      "compatible": true
+     }
+    },
+    {
+     "id": "49d30c14e568acc6",
+     "theta": {
+      "client": "A",
+      "inbound": "east",
+      "outbound": "east",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      7.0,
+      8.25
+     ],
+     "candidate": 3,
+     "tube": {
+      "sha256": "18bd5f398a139c2f6ba74087107335a52452598827f25b7fd8779aa228984f50",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1887,
+     "volume_m2s": "1887/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 0,
+      "digest": "4f53cda18c2baa0c"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 2438,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       8.25
+      ],
+      "conflict_cells": {},
+      "compatible": true
+     }
+    }
+   ],
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "2f3fa8a271c7220f",
+     "exit_window": [
+      6.0,
+      7.25
+     ],
+     "price": "10",
+     "targets": {
+      "owner": "6",
+      "client": "5"
+     },
+     "utilities": {
+      "owner": "1383/200",
+      "client": "51/8"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "accepted": "2f3fa8a271c7220f",
+   "K_star": [
+    6.0,
+    7.25
+   ],
+   "q_star": "10",
+   "compute": {
+    "sat_seconds": [
+     1.5476057222113013
+    ],
+    "corridor_seconds": [
+     1.2639359701424837,
+     0.6582016441971064,
+     0.6487333648838103
+    ],
+    "per_offer_seconds": 0.8569569930744668
+   },
+   "seconds": {
+    "admit": 4.336867646314204,
+    "generate": 3.43983992934227e-06,
+    "bargain": 0.0008361060172319412,
+    "commit": 0.0009084749035537243,
+    "total": 4.338615667074919,
+    "checks": 5.915282171685249
+   },
+   "memory": {
+    "tube_mib": 21.03302001953125,
+    "peak_rss_mib": 2470.88671875
+   },
+   "checks_detail": {
+    "worker": {
+     "order_independent": true,
+     "inputs_untouched": true,
+     "readonly": true,
+     "hashes": {
+      "0": "5d98d64f2b76f323f0b363604cdf35b9fc352ef1bf3decd042c52b5b1f81a351",
+      "1": "ec197a9db735c67d076b26a9fb9b16c4eb84b366fdfd23ab9b5af034c80d0065",
+      "2": "18bd5f398a139c2f6ba74087107335a52452598827f25b7fd8779aa228984f50"
+     }
+    },
+    "non_blocking": {
+     "cells": 13921,
+     "empty": 311,
+     "where": [
+      {
+       "t": 0.0,
+       "cells": 2
+      },
+      {
+       "t": 0.25,
+       "cells": 6
+      },
+      {
+       "t": 0.5,
+       "cells": 8
+      },
+      {
+       "t": 0.75,
+       "cells": 10
+      },
+      {
+       "t": 1.0,
+       "cells": 14
+      },
+      {
+       "t": 1.25,
+       "cells": 12
+      },
+      {
+       "t": 1.5,
+       "cells": 18
+      },
+      {
+       "t": 1.75,
+       "cells": 16
+      },
+      {
+       "t": 2.0,
+       "cells": 10
+      },
+      {
+       "t": 2.25,
+       "cells": 16
+      }
+     ],
+     "seconds": 1.6834016810171306
+    },
+    "sampling": {
+     "samples": 25,
+     "outcomes": [
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": 4.275,
+       "blocked": 5.5,
+       "exited": null
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": 4.575,
+       "blocked": 5.5,
+       "exited": null
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": 4.35,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": 3.275,
+       "blocked": null,
+       "exited": 6.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": 7.05,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": 6.35,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": 3.525,
+       "blocked": 4.75,
+       "exited": null
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 7.0
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": 5.025,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": 4.275,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": 2.175,
+       "blocked": null,
+       "exited": 6.0
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.75
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": 5.1,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.0
+      },
+      {
+       "entry_t": 0.0,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 7.0
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": 5.85,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": 6.525,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": 6.05,
+       "blocked": null,
+       "exited": 7.25
+      },
+      {
+       "entry_t": 0.5,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.25
+      },
+      {
+       "entry_t": 0.25,
+       "entry_in_corridor": true,
+       "left_corridor": null,
+       "blocked": null,
+       "exited": 6.0
+      }
+     ],
+     "pairs": {},
+     "seconds": 2.4602261250838637
+    }
+   }
+  }
+ ]
+}

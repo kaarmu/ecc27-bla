@@ -8,12 +8,11 @@ admit, generate, bargain and commit are loaded verbatim from notebooks/protocol.
 New here: grid/linear-concession policies, a refinement decision for the
 reservation fragment, the scenario, the checks and the outputs.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from fractions import Fraction as F
 from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
-from types import SimpleNamespace
 import csv
 import json
 import platform
@@ -21,24 +20,22 @@ import sys
 
 import portion as P
 import interval_logic as il
-from protocol import (Booking, Request, Service, Policies, PricedOffer, Contract, affine_policies,
-                      decide_booking, independent_feasible_starts, joint_witness, check_joint_behavior,
-                      standing, validate_bargaining, validate_commit)
+from protocol import (Booking, Request, Service, decide_booking, independent_feasible_starts, joint_witness, check_joint_behavior,
+                      standing)
 from protocol.bookings import _access_id, _flexible_view, UnsupportedContractError
 from protocol.contracts import normalize, _cnf, _dual
-from protocol.companion import load_method_notebook, clock, clock_interval
+from protocol.companion import clock, clock_interval
+from bla_stages import Backend, Checks, Protocol, attempt, method, same_protocol_code, validators_pass
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts' / 'charging_experiment'
 HORIZON = (360, 720)
-PARTIES = ('owner', 'client')
 GRID = tuple(F(q) for q in range(0, 21))        # €0, €1, ..., €20
 PRICES = (GRID[0], GRID[-1])
 ROUND_BUDGET = 4
+PROTOCOL = Protocol(GRID, ROUND_BUDGET)
 OWNER = dict(target=F(10), minimum=F(4))        # u_o = q
 SEED = 0                                         # no draws: the sequence is designed by hand
-
-method = load_method_notebook(ROOT / 'notebooks' / 'protocol.ipynb')
 
 
 # ---------------------------------------------------------------- scenario
@@ -89,27 +86,15 @@ def validate_scenario():
 
 
 # ---------------------------------------------------------------- domain backend (charging)
-def charging_policies(offers, spec):
-    """u_o = q; u_c = v - q - alpha*lateness; grid prices; linear concession to the minimum."""
-    late = {o: max(F(0), o.start - spec.s_pref) for o in offers}
-    base = affine_policies({o: 0 for o in offers}, {o: spec.v - spec.alpha * late[o] for o in offers})
-    step = {p: (spec.targets[p] - spec.minima[p]) / (ROUND_BUDGET - 1) for p in PARTIES}
-
-    def propose(party, offers, target, prices):
-        # Earliest offer with a grid price meeting the target; the proposer's best such price.
-        for offer in sorted(offers, key=lambda o: o.start):
-            meets = [q for q in GRID if prices[0] <= q <= prices[1] and base.utility(party, offer, q) >= target]
-            if meets:
-                return PricedOffer(offer, min(meets) if party == 'owner' else max(meets))
-        raise ValueError('target unattainable on the price grid')
-
-    def concede(party, target, minimum):
-        return max(minimum, target - step[party])
-
-    return Policies(base.utility, propose, base.accept, concede)
+def charging_utility(spec, offers):
+    """u_o = q; u_c = v - q - alpha * max(0, s - s_pref)."""
+    def utility(party, offer, price):
+        return price if party == 'owner' else spec.v - price - spec.alpha * max(F(0), offer.start - spec.s_pref)
+    return utility
 
 
-BACKEND = SimpleNamespace(admit=method.admit, generate=method.generate, policies=charging_policies)
+BACKEND = Backend(admit=lambda request, commitment, _resources, now: method.admit(request, commitment, now),
+                  generate=method.generate, utility=charging_utility)
 
 
 # ---------------------------------------------------------------- refinement in the reservation fragment
@@ -178,38 +163,8 @@ def refines(lower, upper, now):
 
 
 # ---------------------------------------------------------------- attempt and checks
-@dataclass
-class Checks:
-    counts: dict = field(default_factory=dict)
-    violations: list = field(default_factory=list)
-
-    def __call__(self, name, ok, detail=''):
-        n, bad = self.counts.get(name, (0, 0))
-        self.counts[name] = (n + 1, bad + (not ok))
-        if not ok:
-            self.violations.append(f'{name}: {detail}')
-
-
 def overlaps(x, y):
     return x.lower < y.upper and y.lower < x.upper
-
-
-def attempt(spec, commitment, bookings, ledger, backend):
-    """Domain-neutral stages; the backend supplies admission, generation and utilities."""
-    times, now, request = {}, spec.received, spec.request
-    t = perf_counter(); admission = backend.admit(request, commitment, now); times['admit'] = perf_counter() - t
-    t = perf_counter(); offers = backend.generate(admission); times['generate'] = perf_counter() - t
-    if admission is None:
-        return dict(admission=None, offers=(), negotiation=None, policies=None, times=times,
-                    result=SimpleNamespace(status='REJECTED', commitment=commitment, ledger=ledger, agreement=None))
-    policies = backend.policies(offers, spec)
-    t = perf_counter()
-    negotiation = method.bargain(offers, policies, spec.targets, spec.minima, PRICES, ROUND_BUDGET)
-    times['bargain'] = perf_counter() - t
-    t = perf_counter(); result = method.commit(admission, offers, negotiation, commitment, ledger)
-    times['commit'] = perf_counter() - t
-    return dict(admission=admission, offers=offers, negotiation=negotiation, policies=policies,
-                result=result, times=times)
 
 
 def check_attempt(check, spec, record, commitment, bookings, ledger, after):
@@ -268,37 +223,7 @@ def check_attempt(check, spec, record, commitment, bookings, ledger, after):
 
     # 7. Bargaining and commit validators, re-run on the recorded outputs.
     if negotiation is not None:
-        check('7 validators', validators_pass(spec, record), label)
-
-
-def validators_pass(spec, record):
-    offers, negotiation, policies = record['offers'], record['negotiation'], record['policies']
-    try:
-        validate_bargaining(offers, spec.targets, spec.minima, PRICES, ROUND_BUDGET)
-        if negotiation.status == 'ACCEPTED':
-            validate_commit(record['admission'], offers, negotiation, record['admission'].commitment)
-    except ValueError:
-        return False
-    ok, previous = len(negotiation.history) <= ROUND_BUDGET, None
-    for i, r in enumerate(negotiation.history):
-        targets, utilities = dict(r.targets), dict(r.utilities)
-        responder = 'client' if r.proposer == 'owner' else 'owner'
-        late = max(F(0), r.proposal.offer.start - spec.s_pref)
-        declared = {'owner': r.proposal.price, 'client': spec.v - r.proposal.price - spec.alpha * late}
-        ok &= (r.number == i + 1 and r.proposer == PARTIES[i % 2] and r.proposal.price in GRID
-               and any(o is r.proposal.offer for o in offers) and utilities == declared
-               and utilities[r.proposer] >= targets[r.proposer]
-               and (not r.accepted or utilities[responder] >= spec.minima[responder])
-               and all(spec.minima[p] <= targets[p] for p in PARTIES))
-        if previous is not None:
-            # Linear concession: a fixed step per party, floored at the minimum.
-            step = {p: (spec.targets[p] - spec.minima[p]) / (ROUND_BUDGET - 1) for p in PARTIES}
-            ok &= all(targets[p] == max(spec.minima[p], previous[p] - step[p]) <= previous[p] for p in PARTIES)
-        previous = targets
-    accepted = negotiation.status == 'ACCEPTED'
-    ok &= accepted == bool(negotiation.history and negotiation.history[-1].accepted)
-    ok &= accepted or not offers or len(negotiation.history) == ROUND_BUDGET
-    return ok
+        check('7 validators', validators_pass(spec, record, BACKEND, PROTOCOL), label)
 
 
 def negative_controls():
@@ -459,11 +384,12 @@ def environment():
 # ---------------------------------------------------------------- run
 def main():
     validate_scenario()
+    assert same_protocol_code(BACKEND)
     OUT.mkdir(parents=True, exist_ok=True)
     check, commitment, bookings, ledger = Checks(), standing(), (), ()
     entries, records, standing_before = [], [], []
     for spec in SCENARIO:
-        record = attempt(spec, commitment, bookings, ledger, BACKEND)
+        record = attempt(spec, commitment, bookings, ledger, BACKEND, PROTOCOL)
         result = record['result']
         after = bookings if result.agreement is None else (*bookings, record['negotiation'].agreement.offer.booking)
         t = perf_counter()

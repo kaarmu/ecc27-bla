@@ -1,0 +1,83 @@
+{
+ "python": "3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)]",
+ "platform": "Linux-6.19.10-300.fc44.x86_64-x86_64-with-glibc2.43",
+ "machine": "x86_64",
+ "cpu": "AMD Ryzen Threadripper 3970X 32-Core Processor",
+ "jax_devices": [
+  "cuda:0"
+ ],
+ "packages": {
+  "interval-logic": "0.3.0",
+  "pyspect": "1.2",
+  "hj-reachability": "0.7.0",
+  "jax": "0.12.0.1",
+  "jaxlib": "0.12.0.1",
+  "jax-cuda13-plugin": "0.12.0.1",
+  "numpy": "2.5.4",
+  "scipy": "1.18.1",
+  "portion": "2.6.2",
+  "matplotlib": "3.11.2"
+ },
+ "note": "jax-cuda13-plugin is installed in .venv outside uv.lock; without it JAX runs on CPU",
+ "grid": {
+  "axes": [
+   {
+    "name": "t",
+    "bounds": [
+     0,
+     10
+    ],
+    "step": 0.25,
+    "unit": "s"
+   },
+   {
+    "name": "x",
+    "bounds": [
+     -2,
+     2
+    ],
+    "points": 41,
+    "unit": "m"
+   },
+   {
+    "name": "y",
+    "bounds": [
+     -2,
+     2
+    ],
+    "points": 41,
+    "unit": "m"
+   },
+   {
+    "name": "*h",
+    "bounds": [
+     -2.356194490192345,
+     3.9269908169872414
+    ],
+    "points": 16,
+    "unit": "rad"
+   },
+   {
+    "name": "v",
+    "bounds": [
+     0.3,
+     0.6
+    ],
+    "points": 5,
+    "unit": "m/s"
+   }
+  ],
+  "accuracy": "medium",
+  "dynamics": {
+   "cls": "Bicycle4D",
+   "wheelbase": 0.32,
+   "min_steer": -0.7853981633974483,
+   "max_steer": 0.7853981633974483,
+   "min_accel": -0.15,
+   "max_accel": 0.15
+  },
+  "solver": "pyspect TVHJImpl"
+ },
+ "grid_id": "13da2a7eb57115af",
+ "timing": "time.perf_counter, single run, one process; stage times exclude checks; JIT compilation is included in the first computations"
+}
