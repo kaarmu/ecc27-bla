@@ -1,0 +1,12 @@
+{
+ "python": "3.14.7 (main, Aug 10 2026, 00:00:00) [GCC 16.1.1 20260515 (Red Hat 16.1.1-2)]",
+ "platform": "Linux-6.19.10-300.fc44.x86_64-x86_64-with-glibc2.43",
+ "machine": "x86_64",
+ "cpu": "AMD Ryzen Threadripper 3970X 32-Core Processor",
+ "packages": {
+  "interval-logic": "0.3.0",
+  "portion": "2.6.2",
+  "matplotlib": "3.11.2"
+ },
+ "timing": "time.perf_counter, single run, one process; stage times exclude checks"
+}

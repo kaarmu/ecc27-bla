@@ -1,0 +1,9 @@
+request,J,d_min,admission,residual,offers_gen,offers_cert,offers_compat,rounds,outcome,s_star,q_star_eur,time_ms
+1,"[06:30,07:30]",60,as requested,"[390,450]",3,3,3,1,ACCEPTED,06:30,10,15.9
+2,"[07:00,08:30]",60,as requested,"[450,510]",3,3,3,2,ACCEPTED,07:30,8,23.4
+3,"[07:00,08:00]",60,adapted (2),"[510,570]",3,3,3,1,ACCEPTED,08:30,10,74.8
+4,"[09:30,11:00]",50,as requested,"[570,660]",4,4,4,4,NO-BLA,,,32.2
+5,"[06:00,07:00]",40,rejected,∅,0,0,0,0,REJECTED,,,27.3
+6,"[09:30,10:30]",90,as requested,"[570,630]",2,2,2,3,ACCEPTED,09:30,6,33.6
+7,"[06:00,07:00]",60,adapted (1),"[360,360]",1,1,1,2,ACCEPTED,06:00,8,80.0
+8,"[10:30,11:30]",30,as requested,"[660,690]",3,3,3,1,ACCEPTED,11:00,10,67.1

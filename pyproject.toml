@@ -21,3 +21,4 @@ packages = ["src/interval_logic", "src/protocol", "src/ltms_reachability", "src/
 [dependency-groups]
 dev = []
 notebooks = ["plotly", "ipykernel", "nbformat", "nbclient"]
+experiment = ["matplotlib==3.11.2"]

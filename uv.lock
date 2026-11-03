@@ -375,6 +375,9 @@ reachability = [
 ]
 
 [package.dev-dependencies]
+experiment = [
+    { name = "matplotlib" },
+]
 notebooks = [
     { name = "ipykernel" },
     { name = "nbclient" },
@@ -393,6 +396,7 @@ provides-extras = ["reachability"]
 
 [package.metadata.requires-dev]
 dev = []
+experiment = [{ name = "matplotlib", specifier = "==3.11.2" }]
 notebooks = [
     { name = "ipykernel" },
     { name = "nbclient" },

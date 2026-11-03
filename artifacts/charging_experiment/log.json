@@ -1,0 +1,950 @@
+{
+ "summary": {
+  "seed": 0,
+  "round_budget": 4,
+  "price_grid": "€0..€20 step €1",
+  "owner": {
+   "target": "10",
+   "minimum": "4"
+  },
+  "checks": {
+   "admission = interval arithmetic": {
+    "evaluated": 8,
+    "violations": 0
+   },
+   "1 disjoint windows": {
+    "evaluated": 8,
+    "violations": 0
+   },
+   "quotient guarantee = S_a": {
+    "evaluated": 7,
+    "violations": 0
+   },
+   "3 offer certified": {
+    "evaluated": 19,
+    "violations": 0
+   },
+   "3 offer compatible": {
+    "evaluated": 19,
+    "violations": 0
+   },
+   "3 interval/algebra agreement": {
+    "evaluated": 19,
+    "violations": 0
+   },
+   "2 start in J ∩ residual": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "2 K refines Q": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "4 composition refines target": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "4 trace witness": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "5 consistent": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "commit = priced offer": {
+    "evaluated": 6,
+    "violations": 0
+   },
+   "7 validators": {
+    "evaluated": 7,
+    "violations": 0
+   },
+   "6 unchanged on failure": {
+    "evaluated": 2,
+    "violations": 0
+   }
+  },
+  "violations": [],
+  "branches": {
+   "1 as requested, accepted": true,
+   "2 empty residual, adapted, accepted": true,
+   "3 several certified starts, >1 round": true,
+   "4 NO-BLA, budget exhausted": true,
+   "5 rejected, no adaptation": true
+  },
+  "negative_controls": {
+   "valid start 450": {
+    "expected": [
+     true,
+     true,
+     true
+    ],
+    "got": [
+     true,
+     true,
+     true
+    ],
+    "ok": true
+   },
+   "start outside J (540)": {
+    "expected": [
+     false,
+     true,
+     false
+    ],
+    "got": [
+     false,
+     true,
+     false
+    ],
+    "ok": true
+   },
+   "too short (450, 30 min)": {
+    "expected": [
+     false,
+     true,
+     false
+    ],
+    "got": [
+     false,
+     true,
+     false
+    ],
+    "ok": true
+   },
+   "overlaps W_1 (420)": {
+    "expected": [
+     true,
+     false,
+     true
+    ],
+    "got": [
+     true,
+     false,
+     true
+    ],
+    "ok": true
+   }
+  },
+  "final_schedule": [
+   {
+    "client": 7,
+    "W": "[06:00,06:30)"
+   },
+   {
+    "client": 1,
+    "W": "[06:30,07:30)"
+   },
+   {
+    "client": 2,
+    "W": "[07:30,08:30)"
+   },
+   {
+    "client": 3,
+    "W": "[08:30,09:30)"
+   },
+   {
+    "client": 6,
+    "W": "[09:30,11:00)"
+   },
+   {
+    "client": 8,
+    "W": "[11:00,11:30)"
+   }
+  ]
+ },
+ "requests": [
+  {
+   "request": 1,
+   "branch": "as requested, accepted",
+   "received": "05:00",
+   "theta": {
+    "J": "[390,450]",
+    "J_clock": "[06:30,07:30]",
+    "d": 60
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "16",
+    "alpha": "1/20",
+    "s_pref": "06:30",
+    "targets": {
+     "owner": "10",
+     "client": "4"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [],
+   "admission": "as requested",
+   "tried": [
+    {
+     "J": "[390,450]",
+     "J_clock": "[06:30,07:30]",
+     "d": 60,
+     "residual": "[390,450]"
+    }
+   ],
+   "residual": "[390,450]",
+   "offers": {
+    "generated": 3,
+    "certified": 3,
+    "compatible": 3,
+    "starts": [
+     "06:30",
+     "07:00",
+     "07:30"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[390,450)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "4"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "6"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "06:30",
+   "q_star": "10",
+   "seconds": {
+    "admit": 0.015406919177621603,
+    "generate": 0.00015678908675909042,
+    "bargain": 0.00018648011609911919,
+    "commit": 0.00016473885625600815,
+    "total": 0.01591492723673582,
+    "checks": 0.028793727047741413
+   }
+  },
+  {
+   "request": 2,
+   "branch": "several starts, multi-round",
+   "received": "05:05",
+   "theta": {
+    "J": "[420,510]",
+    "J_clock": "[07:00,08:30]",
+    "d": 60
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "12",
+    "alpha": "1/20",
+    "s_pref": "07:30",
+    "targets": {
+     "owner": "10",
+     "client": "5"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    }
+   ],
+   "admission": "as requested",
+   "tried": [
+    {
+     "J": "[420,510]",
+     "J_clock": "[07:00,08:30]",
+     "d": 60,
+     "residual": "[450,510]"
+    }
+   ],
+   "residual": "[450,510]",
+   "offers": {
+    "generated": 3,
+    "certified": 3,
+    "compatible": 3,
+    "starts": [
+     "07:30",
+     "08:00",
+     "08:30"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[450,510)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "5"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "[450,510)",
+     "price": "8",
+     "targets": {
+      "owner": "8",
+      "client": "11/3"
+     },
+     "utilities": {
+      "owner": "8",
+      "client": "4"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "07:30",
+   "q_star": "8",
+   "seconds": {
+    "admit": 0.022368541918694973,
+    "generate": 0.00014694873243570328,
+    "bargain": 0.00026713777333498,
+    "commit": 0.0006379671394824982,
+    "total": 0.023420595563948154,
+    "checks": 0.054807170294225216
+   }
+  },
+  {
+   "request": 3,
+   "branch": "empty residual, adapted",
+   "received": "05:10",
+   "theta": {
+    "J": "[420,480]",
+    "J_clock": "[07:00,08:00]",
+    "d": 60
+   },
+   "adaptations": [
+    {
+     "J": "[420,480]",
+     "J_clock": "[07:00,08:00]",
+     "d": 30
+    },
+    {
+     "J": "[420,570]",
+     "J_clock": "[07:00,09:30]",
+     "d": 60
+    }
+   ],
+   "policy": {
+    "v": "15",
+    "alpha": "1/100",
+    "s_pref": "07:00",
+    "targets": {
+     "owner": "10",
+     "client": "4"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    }
+   ],
+   "admission": "adapted (2)",
+   "tried": [
+    {
+     "J": "[420,480]",
+     "J_clock": "[07:00,08:00]",
+     "d": 60,
+     "residual": "∅"
+    },
+    {
+     "J": "[420,480]",
+     "J_clock": "[07:00,08:00]",
+     "d": 30,
+     "residual": "∅"
+    },
+    {
+     "J": "[420,570]",
+     "J_clock": "[07:00,09:30]",
+     "d": 60,
+     "residual": "[510,570]"
+    }
+   ],
+   "residual": "[510,570]",
+   "offers": {
+    "generated": 3,
+    "certified": 3,
+    "compatible": 3,
+    "starts": [
+     "08:30",
+     "09:00",
+     "09:30"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[510,570)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "4"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "41/10"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "08:30",
+   "q_star": "10",
+   "seconds": {
+    "admit": 0.07249717693775892,
+    "generate": 0.0002008792944252491,
+    "bargain": 0.00023725908249616623,
+    "commit": 0.001876319758594036,
+    "total": 0.07481163507327437,
+    "checks": 0.08226230507716537
+   }
+  },
+  {
+   "request": 4,
+   "branch": "NO-BLA, budget exhausted",
+   "received": "05:15",
+   "theta": {
+    "J": "[570,660]",
+    "J_clock": "[09:30,11:00]",
+    "d": 50
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "9/2",
+    "alpha": "0",
+    "s_pref": "09:30",
+    "targets": {
+     "owner": "10",
+     "client": "2"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    },
+    {
+     "client": 3,
+     "W": "[510,570)"
+    }
+   ],
+   "admission": "as requested",
+   "tried": [
+    {
+     "J": "[570,660]",
+     "J_clock": "[09:30,11:00]",
+     "d": 50,
+     "residual": "[570,660]"
+    }
+   ],
+   "residual": "[570,660]",
+   "offers": {
+    "generated": 4,
+    "certified": 4,
+    "compatible": 4,
+    "starts": [
+     "09:30",
+     "09:55",
+     "10:20",
+     "10:45"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[570,620)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "2"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "-11/2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "[570,620)",
+     "price": "2",
+     "targets": {
+      "owner": "8",
+      "client": "5/3"
+     },
+     "utilities": {
+      "owner": "2",
+      "client": "5/2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 3,
+     "proposer": "owner",
+     "offer": "[570,620)",
+     "price": "6",
+     "targets": {
+      "owner": "6",
+      "client": "4/3"
+     },
+     "utilities": {
+      "owner": "6",
+      "client": "-3/2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 4,
+     "proposer": "client",
+     "offer": "[570,620)",
+     "price": "3",
+     "targets": {
+      "owner": "4",
+      "client": "1"
+     },
+     "utilities": {
+      "owner": "3",
+      "client": "3/2"
+     },
+     "response": "reject"
+    }
+   ],
+   "outcome": "NO-BLA",
+   "s_star": null,
+   "q_star": null,
+   "seconds": {
+    "admit": 0.03156377328559756,
+    "generate": 0.00018893880769610405,
+    "bargain": 0.0004480271600186825,
+    "commit": 2.820044755935669e-06,
+    "total": 0.032203559298068285,
+    "checks": 0.06848200783133507
+   }
+  },
+  {
+   "request": 5,
+   "branch": "rejected, no adaptation",
+   "received": "05:20",
+   "theta": {
+    "J": "[360,420]",
+    "J_clock": "[06:00,07:00]",
+    "d": 40
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "10",
+    "alpha": "0",
+    "s_pref": "06:00",
+    "targets": {
+     "owner": "10",
+     "client": "2"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    },
+    {
+     "client": 3,
+     "W": "[510,570)"
+    }
+   ],
+   "admission": "rejected",
+   "tried": [
+    {
+     "J": "[360,420]",
+     "J_clock": "[06:00,07:00]",
+     "d": 40,
+     "residual": "∅"
+    }
+   ],
+   "residual": null,
+   "offers": {
+    "generated": 0,
+    "certified": 0,
+    "compatible": 0,
+    "starts": []
+   },
+   "rounds": [],
+   "outcome": "REJECTED",
+   "s_star": null,
+   "q_star": null,
+   "seconds": {
+    "admit": 0.027341174893081188,
+    "generate": 6.300397217273712e-07,
+    "total": 0.027341804932802916,
+    "checks": 0.00031937845051288605
+   }
+  },
+  {
+   "request": 6,
+   "branch": "several starts, multi-round",
+   "received": "05:25",
+   "theta": {
+    "J": "[570,630]",
+    "J_clock": "[09:30,10:30]",
+    "d": 90
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "12",
+    "alpha": "1/10",
+    "s_pref": "10:00",
+    "targets": {
+     "owner": "10",
+     "client": "7"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    },
+    {
+     "client": 3,
+     "W": "[510,570)"
+    }
+   ],
+   "admission": "as requested",
+   "tried": [
+    {
+     "J": "[570,630]",
+     "J_clock": "[09:30,10:30]",
+     "d": 90,
+     "residual": "[570,630]"
+    }
+   ],
+   "residual": "[570,630]",
+   "offers": {
+    "generated": 2,
+    "certified": 2,
+    "compatible": 2,
+    "starts": [
+     "09:30",
+     "10:15"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[570,660)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "7"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "[570,660)",
+     "price": "7",
+     "targets": {
+      "owner": "8",
+      "client": "5"
+     },
+     "utilities": {
+      "owner": "7",
+      "client": "5"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 3,
+     "proposer": "owner",
+     "offer": "[570,660)",
+     "price": "6",
+     "targets": {
+      "owner": "6",
+      "client": "3"
+     },
+     "utilities": {
+      "owner": "6",
+      "client": "6"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "09:30",
+   "q_star": "6",
+   "seconds": {
+    "admit": 0.031239915173500776,
+    "generate": 0.00011254940181970596,
+    "bargain": 0.0003427378833293915,
+    "commit": 0.0019483198411762714,
+    "total": 0.033643522299826145,
+    "checks": 0.09130873717367649
+   }
+  },
+  {
+   "request": 7,
+   "branch": "empty residual, adapted",
+   "received": "05:30",
+   "theta": {
+    "J": "[360,420]",
+    "J_clock": "[06:00,07:00]",
+    "d": 60
+   },
+   "adaptations": [
+    {
+     "J": "[360,420]",
+     "J_clock": "[06:00,07:00]",
+     "d": 30
+    }
+   ],
+   "policy": {
+    "v": "10",
+    "alpha": "0",
+    "s_pref": "06:00",
+    "targets": {
+     "owner": "10",
+     "client": "2"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    },
+    {
+     "client": 3,
+     "W": "[510,570)"
+    },
+    {
+     "client": 6,
+     "W": "[570,660)"
+    }
+   ],
+   "admission": "adapted (1)",
+   "tried": [
+    {
+     "J": "[360,420]",
+     "J_clock": "[06:00,07:00]",
+     "d": 60,
+     "residual": "∅"
+    },
+    {
+     "J": "[360,420]",
+     "J_clock": "[06:00,07:00]",
+     "d": 30,
+     "residual": "[360,360]"
+    }
+   ],
+   "residual": "[360,360]",
+   "offers": {
+    "generated": 1,
+    "certified": 1,
+    "compatible": 1,
+    "starts": [
+     "06:00"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[360,390)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "2"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "0"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "[360,390)",
+     "price": "8",
+     "targets": {
+      "owner": "8",
+      "client": "5/3"
+     },
+     "utilities": {
+      "owner": "8",
+      "client": "2"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "06:00",
+   "q_star": "8",
+   "seconds": {
+    "admit": 0.07684453297406435,
+    "generate": 7.745996117591858e-05,
+    "bargain": 0.0002623582258820534,
+    "commit": 0.002804684918373823,
+    "total": 0.07998903607949615,
+    "checks": 0.09904812602326274
+   }
+  },
+  {
+   "request": 8,
+   "branch": "as requested, accepted",
+   "received": "05:35",
+   "theta": {
+    "J": "[630,690]",
+    "J_clock": "[10:30,11:30]",
+    "d": 30
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "16",
+    "alpha": "1/20",
+    "s_pref": "11:00",
+    "targets": {
+     "owner": "10",
+     "client": "3"
+    },
+    "minima": {
+     "owner": "4",
+     "client": "1"
+    }
+   },
+   "standing": [
+    {
+     "client": 7,
+     "W": "[360,390)"
+    },
+    {
+     "client": 1,
+     "W": "[390,450)"
+    },
+    {
+     "client": 2,
+     "W": "[450,510)"
+    },
+    {
+     "client": 3,
+     "W": "[510,570)"
+    },
+    {
+     "client": 6,
+     "W": "[570,660)"
+    }
+   ],
+   "admission": "as requested",
+   "tried": [
+    {
+     "J": "[630,690]",
+     "J_clock": "[10:30,11:30]",
+     "d": 30,
+     "residual": "[660,690]"
+    }
+   ],
+   "residual": "[660,690]",
+   "offers": {
+    "generated": 3,
+    "certified": 3,
+    "compatible": 3,
+    "starts": [
+     "11:00",
+     "11:15",
+     "11:30"
+    ]
+   },
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "[660,690)",
+     "price": "10",
+     "targets": {
+      "owner": "10",
+      "client": "3"
+     },
+     "utilities": {
+      "owner": "10",
+      "client": "6"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "s_star": "11:00",
+   "q_star": "10",
+   "seconds": {
+    "admit": 0.06291668675839901,
+    "generate": 0.0001476593315601349,
+    "bargain": 0.00017127906903624535,
+    "commit": 0.0038179499097168446,
+    "total": 0.06705357506871223,
+    "checks": 0.1873338189907372
+   }
+  }
+ ]
+}
