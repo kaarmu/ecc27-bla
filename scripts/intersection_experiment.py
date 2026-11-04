@@ -6,8 +6,8 @@ Writes artifacts/intersection_experiment/{log.json,table.csv,figure.pdf,environm
 The model, map, grid, TLT query of φ_j and the corridor passes are notebooks/ltms_blas.ipynb's
 definition cells, compiled verbatim (ltms_bla.scenario.load_method). The protocol stages are
 bla_stages.py, shared with Experiment A (charging): only admit, generate and the utilities differ.
-New here: the scenario and utilities, offer records, the candidate-worker test, the checks, the
-driving limits for Bicycle4D, the sampled simulation and the outputs.
+New here: the scenario and utilities, offer records, the candidate-worker test, checks 1-7 and the
+outputs. Closed-loop trajectories are out of scope (D136): no driving limits, no sampled rollouts.
 
 Grid-based HJ: every set below is a sampled, numerical approximation, not an exact set.
 """
@@ -25,10 +25,9 @@ import resource
 import sys
 
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
 
 from ltms_bla.scenario import load_method
-from bla_stages import Backend, Checks, Protocol, attempt, same_protocol_code, validators_pass
+from bla_stages import Backend, Checks, Protocol, attempt, method, same_protocol_code, validators_pass
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts' / 'intersection_experiment'
@@ -38,8 +37,7 @@ ROUND_BUDGET = 4
 PROTOCOL = Protocol(GRID, ROUND_BUDGET)
 OWNER = dict(target=F(6), minimum=F(1))   # u_m = q - kappa |Phi|
 KAPPA = F(1)                              # € per m²·s of reserved space-time
-SEED, SAMPLES = 0, 25                     # sampled entries per committed vehicle
-CONTROL_POINTS, SUBSTEPS = 9, 10          # control grid per axis; RK4 substeps per time step
+SEED = 0                                  # no draws: the sequence is designed by hand
 TOL, BODY = M.TOLERANCE, M.BODY           # corridor membership V <= TOL; vehicle radius [m]
 
 T, X, Y, H, V = (np.asarray(a, dtype=float) for a in (M.impl.timeline, M.x, M.y, M.h, M.v))
@@ -268,150 +266,20 @@ def conflict_cells(later, earlier):
     return count
 
 
-# ---------------------------------------------------------------- driving limits and simulation (Bicycle4D)
-H_EXT = np.r_[H, H[0] + 2 * pi]
-U_GRID = np.stack(np.meshgrid(np.linspace(M.CONTROLS['min_steer'], M.CONTROLS['max_steer'], CONTROL_POINTS),
-                              np.linspace(M.CONTROLS['min_accel'], M.CONTROLS['max_accel'], CONTROL_POINTS),
-                              indexing='ij'), -1).reshape(-1, 2)
+# ---------------------------------------------------------------- candidate worker (check 4)
+def state_hash(obj):
+    """Digest of an object's attributes (identity and arrays by content): detects caches filling up."""
+    parts = []
+    for k, v in sorted(vars(obj).items()):
+        parts.append(k + (tube_hash(v) if isinstance(v, np.ndarray) else f'{type(v).__name__}:{id(v)}'))
+    return sha256('|'.join(parts).encode()).hexdigest()
 
 
-class Tube:
-    """Multilinear interpolation of a corridor over (t, x, y, h, v); periodic h; outside the grid = outside."""
-    def __init__(self, corridor):
-        values = np.concatenate([corridor, corridor[:, :, :, :1]], axis=3).astype(float)
-        self.f = RegularGridInterpolator((T, X, Y, H_EXT, V), values, bounds_error=False, fill_value=1.0)
-
-    def __call__(self, t, z):
-        z = np.atleast_2d(z)
-        h = (z[:, 2] - H[0]) % (2 * pi) + H[0]
-        return self.f(np.column_stack([np.broadcast_to(t, len(z)), z[:, 0], z[:, 1], h, z[:, 3]]))
-
-
-def dynamics(z, u):
-    return np.column_stack([z[:, 3] * np.cos(z[:, 2]), z[:, 3] * np.sin(z[:, 2]),
-                            z[:, 3] * np.tan(u[:, 0]) / M.WHEELBASE, u[:, 1]])
-
-
-def rk4(z, u, dt):
-    k1 = dynamics(z, u); k2 = dynamics(z + dt / 2 * k1, u)
-    k3 = dynamics(z + dt / 2 * k2, u); k4 = dynamics(z + dt * k3, u)
-    return z + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-
-def step(z, u):
-    """Zero-order hold over one time step; returns the end state and the substep states."""
-    path = []
-    for _ in range(SUBSTEPS):
-        z = rk4(z, u, DT / SUBSTEPS)
-        path.append(z)
-    return z, path
-
-
-def admissible(tube, k, states):
-    """Driving limits on the control grid: u with V_{k+1}(z after one held step) <= TOL. (n, |U|) bool."""
-    n = len(states)
-    z = np.repeat(states, len(U_GRID), axis=0)
-    u = np.tile(U_GRID, (n, 1))
-    end, _ = step(z, u)
-    return (tube(T[k + 1], end) <= TOL).reshape(n, len(U_GRID))
-
-
-def exit_indices(offer):
-    origin = float(offer.service.entry[0])
-    return {k for k in range(len(T)) if offer.exit[0] - 1e-9 <= T[k] + origin <= offer.exit[1] + 1e-9}
-
-
-def in_exit(offer, z):
-    m = M.MAP[offer.service.outbound]
-    (x0, x1), (y0, y1) = m['exit']['x'], m['exit']['y']
-    return ((x0 <= z[:, 0]) & (z[:, 0] <= x1) & (y0 <= z[:, 1]) & (z[:, 1] <= y1)
-            & (periodic_distance(z[:, 2], m['heading']) <= M.HEADING_BAND)
-            & (M.SPEED_LIMIT[0] <= z[:, 3]) & (z[:, 3] <= M.SPEED_LIMIT[1]))
-
-
-def grid_states(index):
-    return np.column_stack([X[index[0]], Y[index[1]], H[index[2]], V[index[3]]])
-
-
-def non_blocking(offer, tube):
-    """Corridor grid cells before exit whose driving-limit set (on the control grid) is empty."""
-    exits, corridor = exit_indices(offer), offer.corridor
-    zone_out = np.broadcast_to(np.asarray(M.EXIT_ZONE[offer.service.outbound](M.impl)), corridor.shape)
-    last, evaluated, empty, where = max(exits), 0, 0, []
-    for k in range(len(T) - 1):
-        if k >= last:
-            break
-        inside = corridor[k] <= TOL
-        if k in exits:
-            inside &= zone_out[k] > 0   # cells already in E_out during K may stop
-        index = np.nonzero(inside)
-        if not len(index[0]):
-            continue
-        states = grid_states(index)
-        ok = np.concatenate([admissible(tube, k, states[i:i + 4000]).any(axis=1)
-                             for i in range(0, len(states), 4000)])
-        evaluated += len(states)
-        empty += int((~ok).sum())
-        if (~ok).any():
-            where.append(dict(t=float(T[k] + float(offer.service.entry[0])), cells=int((~ok).sum())))
-    return evaluated, empty, where
-
-
-def simulate(offer, tube, rng):
-    """M sampled entries in E_in x J, random admissible controls until E_out. Returns outcomes and paths."""
-    px, py, ph, pv = M.ENTRY[offer.service.inbound]
-    origin = round(float(offer.service.entry[0]) / DT)
-    J = [k for k in range(len(T)) if T[k] <= float(offer.service.entry[1] - offer.service.entry[0]) + 1e-6]
-    exits, last = exit_indices(offer), max(exit_indices(offer))
-    outcomes, paths = [], []
-    for _ in range(SAMPLES):
-        k = int(rng.choice(J))
-        z = np.array([[px + rng.uniform(-.1, .1), py + rng.uniform(-.1, .1),
-                       ph + rng.uniform(-pi / 8, pi / 8), pv + rng.uniform(-.08, .08)]])
-        out = dict(entry_t=float(T[k]) + origin * DT, entry_in_corridor=bool(tube(T[k], z)[0] <= TOL),
-                   left_corridor=None, blocked=None, exited=None)
-        path = {(origin + k) * SUBSTEPS: z[0, :2].copy()}
-        while True:
-            if k in exits and in_exit(offer, z)[0]:
-                out['exited'] = float(T[k]) + origin * DT
-                break
-            if k >= last:
-                break
-            ok = admissible(tube, k, z)[0]
-            if not ok.any():
-                out['blocked'] = float(T[k]) + origin * DT
-                break
-            u = U_GRID[rng.choice(np.flatnonzero(ok))][None]
-            _, sub = step(z, u)
-            for s, zs in enumerate(sub, 1):
-                if out['left_corridor'] is None and tube(T[k] + s * DT / SUBSTEPS, zs)[0] > TOL:
-                    out['left_corridor'] = float(T[k] + s * DT / SUBSTEPS) + origin * DT
-                path[(origin + k) * SUBSTEPS + s] = zs[0, :2].copy()
-            z, k = sub[-1], k + 1
-        outcomes.append(out)
-        paths.append(path)
-    return outcomes, paths
-
-
-def collisions(paths_a, paths_b):
-    """Sample pairs that come within 2*BODY at a common substep while both are present."""
-    pairs, hits, closest = 0, 0, np.inf
-    for pa in paths_a:
-        for pb in paths_b:
-            common = sorted(pa.keys() & pb.keys())
-            pairs += 1
-            if common:
-                d = np.hypot(*(np.array([pa[c] for c in common]) - np.array([pb[c] for c in common])).T)
-                closest = min(closest, float(d.min()))
-                hits += bool((d < 2 * BODY).any())
-    return pairs, hits, closest
-
-
-# ---------------------------------------------------------------- candidate worker (Stage 1)
 def candidate_worker(service, resources):
-    """Candidates computed in either order are identical; inputs and committed tubes are unchanged."""
+    """Candidates computed in either order are identical; caches, inputs and committed tubes are unchanged."""
     ledger = tuple(Committed(o) for o in resources)
     committed = [tube_hash(o.corridor) for o in resources]
+    planner, solver = state_hash(M.PLANNER), state_hash(M.impl)
     crossing = M.crossing_set(service, ledger)
     before = tube_hash(crossing)
     windows = M.exit_windows(service)
@@ -432,12 +300,27 @@ def candidate_worker(service, resources):
     untouched = (all(first[k] is None or tube_hash(forward[k]) == first[k] for k in forward)
                  and tube_hash(crossing) == before
                  and [tube_hash(o.corridor) for o in resources] == committed)
+    caches = state_hash(M.PLANNER) == planner and state_hash(M.impl) == solver
     readonly = all(v is None or not v.flags.writeable for v in (*forward.values(), *backward.values()))
-    return dict(order_independent=same, inputs_untouched=untouched, readonly=readonly, hashes=first)
+    return dict(order_independent=same, inputs_untouched=untouched, caches_untouched=caches,
+                readonly=readonly, hashes=first)
 
 
 # ---------------------------------------------------------------- attempt checks
-def check_attempt(check, spec, record, commitment, resources, ledger, after, sims, rng):
+def protocol_shared():
+    """Check 7: charging and intersection run the same attempt, bargain and commit; backends differ only in
+    satisfiability/admission, offer generation (and its offer-type check) and utilities."""
+    import charging_experiment as charging
+    a, b = charging.BACKEND, BACKEND
+    fields = [f for f in Backend.__dataclass_fields__ if getattr(a, f) is not getattr(b, f)]
+    return dict(attempt_shared=charging.attempt is attempt,
+                bargain_code_shared=a.bargain.__code__ is b.bargain.__code__ is method.bargain.__code__,
+                commit_shared=charging.method is method,
+                validators_shared=charging.validators_pass is validators_pass,
+                backend_fields_differing=fields)
+
+
+def check_attempt(check, spec, record, commitment, resources, ledger, after):
     request, label = spec.request, f'request {spec.request.client}'
     admission, offers, negotiation, result = (record[k] for k in ('admission', 'offers', 'negotiation', 'result'))
     detail = {}
@@ -450,7 +333,7 @@ def check_attempt(check, spec, record, commitment, resources, ledger, after, sim
                   f'{later.service.client}/{earlier.service.client}: {n} cells')
 
     if admission is not None:
-        # 2. Every generated candidate's coverage, rules and compatibility; offered ones must pass.
+        # 2./3. Every generated candidate's coverage, rules, endpoints and compatibility; offered ones must pass.
         detail['candidates'] = []
         for o in admission.candidates:
             covered, points = coverage(o.corridor, o.service)
@@ -463,63 +346,48 @@ def check_attempt(check, spec, record, commitment, resources, ledger, after, sim
                                    last_sample_outside_exit_zone=exit_out, corridor_span=[t_first, t_last],
                                    conflict_cells=conflicts, compatible=not any(conflicts.values()))
             detail['candidates'].append(rec['id'])
-            check('2 certified: notebook covers = independent coverage', covered == o.certified, f'{label} κ{o.index}')
+            check('2 certified flag = independent coverage', covered == o.certified, f'{label} κ{o.index}')
             if o in offers:
-                check('2 offer certified: E_in×J covered', covered and o.certified, f'{label} κ{o.index}')
-                check('2 offer certified: within C_j, E_in→E_out', outside_rules == 0 and entry_out == 0 and exit_out == 0,
-                      f'{label} κ{o.index} rules={outside_rules} entry={entry_out} exit={exit_out}')
-                check('2 offer compatible: avoids D_j', not any(conflicts.values()), f'{label} κ{o.index} {conflicts}')
+                check('2 offer covers E_in×J', covered and o.certified, f'{label} κ{o.index}')
+                check('2 offer within C_j', outside_rules == 0, f'{label} κ{o.index} rules={outside_rules}')
+                check('2 offer leads E_in→E_out', entry_out == 0 and exit_out == 0,
+                      f'{label} κ{o.index} entry={entry_out} exit={exit_out}')
+                check('3 offer compatible: avoids D_j', not any(conflicts.values()), f'{label} κ{o.index} {conflicts}')
 
-        # Stage 1: candidate worker, against the same frozen commitments.
+        # 4. Candidate worker, against the same frozen commitments.
         worker = candidate_worker(admission.service, resources)
         detail['worker'] = worker
         generated = {o.index - 1: tube_hash(o.corridor) for o in admission.candidates}
-        check('S1 candidates order-independent, inputs untouched',
-              worker['order_independent'] and worker['inputs_untouched'] and worker['readonly']
-              and all(worker['hashes'][k] == h for k, h in generated.items()), label)
+        check('4 candidates order-independent; caches, inputs, tubes unchanged',
+              worker['order_independent'] and worker['inputs_untouched'] and worker['caches_untouched']
+              and worker['readonly'] and all(worker['hashes'][k] == h for k, h in generated.items()), label)
 
-    # 3. Commit installs exactly the priced offer; failures change nothing; committed tubes immutable.
-    check('3 no computation after admission', len(COMPUTE) == LAST.get('computed', len(COMPUTE)) or admission is None, label)
+    # 5. Commit installs exactly the priced offer; NO-BLA/rejection changes nothing; committed tubes immutable.
+    check('5 no computation after admission', len(COMPUTE) == LAST.get('computed', len(COMPUTE)) or admission is None, label)
     if result.agreement is not None:
         pair = negotiation.agreement
         rec = offer_record(pair.offer, resources)
-        check('3 commit = priced offer (ID, tube hash)',
+        check('5 commit = priced offer (ID, tube hash)',
               after[-1] is pair.offer and tube_hash(after[-1].corridor) == rec['tube']['sha256']
               and result.agreement.contract == pair.offer.contract and result.agreement.price == pair.price
               and result.commitment == commitment.conjoin(pair.offer.contract), label)
     else:
-        check('3 unchanged on NO-BLA/rejection', result.commitment is commitment and result.ledger == ledger
-              and after is resources, label)
-    check('3 committed tubes unchanged', all(tube_hash(o.corridor) == offer_record(o, ())['tube']['sha256']
+        check('5 NO-BLA/rejection leaves commitments unchanged', result.commitment is commitment
+              and result.ledger == ledger and after is resources, label)
+    check('5 committed tubes unchanged', all(tube_hash(o.corridor) == offer_record(o, ())['tube']['sha256']
                                              and not o.corridor.flags.writeable for o in after), label)
 
-    # 4. Bargaining and commit validators; bargain is protocol.ipynb's code object.
+    # 6. Bargaining and commit validators.
     if negotiation is not None:
-        check('4 validators', validators_pass(spec, record, BACKEND, PROTOCOL), label)
-        check('4 bargain/commit = protocol.ipynb code', same_protocol_code(BACKEND), label)
+        check('6 bargaining and commit validators', validators_pass(spec, record, BACKEND, PROTOCOL), label)
 
-    # 5./6. Non-blocking and sampling for the newly committed vehicle.
-    if result.agreement is not None:
-        offer = after[-1]
-        tube = Tube(offer.corridor)
-        t = perf_counter()
-        evaluated, empty, where = non_blocking(offer, tube)
-        detail['non_blocking'] = dict(cells=evaluated, empty=empty, where=where[:10], seconds=perf_counter() - t)
-        check('5 non-blocking: driving limits nonempty', empty == 0, f'{label}: {empty}/{evaluated} cells')
-        t = perf_counter()
-        outcomes, paths = simulate(offer, tube, rng)
-        sims[offer.service.client] = paths
-        for o in outcomes:
-            check('6 sampled: entry state in corridor', o['entry_in_corridor'], f'{label} {o}')
-            check('6 sampled: stays in corridor', o['left_corridor'] is None, f'{label} {o}')
-            check('6 sampled: not blocked', o['blocked'] is None, f'{label} {o}')
-            check('6 sampled: exits through E_out in K', o['exited'] is not None, f'{label} {o}')
-        pairs = {}
-        for other in after[:-1]:
-            n, hits, closest = collisions(paths, sims[other.service.client])
-            pairs[other.service.client] = dict(pairs=n, collisions=hits, closest_m=closest)
-            check('6 sampled: no collision', hits == 0, f'{label}/{other.service.client}: {hits}/{n}')
-        detail['sampling'] = dict(samples=len(outcomes), outcomes=outcomes, pairs=pairs, seconds=perf_counter() - t)
+    # 7. Protocol code shared with charging.
+    shared = protocol_shared()
+    detail['protocol_shared'] = shared
+    check('7 protocol code shared with charging',
+          same_protocol_code(BACKEND) and shared['attempt_shared'] and shared['bargain_code_shared']
+          and shared['commit_shared'] and shared['validators_shared']
+          and set(shared['backend_fields_differing']) <= {'admit', 'generate', 'utility', 'validate_offers'}, label)
     return detail
 
 
@@ -588,6 +456,26 @@ def write_table(entries, path):
                         len(e['rounds']), e['outcome'],
                         '' if e['K_star'] is None else '[{:g}, {:g}]'.format(*e['K_star']),
                         e['q_star'] or '', f"{e['seconds']['total']:.2f}"])
+
+
+def figure_times(last, earlier):
+    """Times around the last vehicle's conflict: the step where its corridor comes closest (x, y) to an earlier
+    corridor, and one second either side, kept within its corridor's span."""
+    a = occupancy(last)
+    others = [occupancy(o) for o in earlier]
+    gaps = {}
+    for i, cells in a.items():
+        near = [b[i] for b in others if i in b]
+        if not near:
+            continue
+        ours = np.argwhere(cells)
+        theirs = np.argwhere(np.logical_or.reduce(near))
+        d = np.hypot((X[ours[:, None, 0]] - X[theirs[None, :, 0]]), (Y[ours[:, None, 1]] - Y[theirs[None, :, 1]]))
+        gaps[i] = float(d.min())
+    k = min(gaps, key=lambda i: (gaps[i], i))
+    span = sorted(a)
+    picks = sorted({min(max(k + j, span[0]), span[-1]) for j in (-round(1 / DT), 0, round(1 / DT))})
+    return [round(i * DT, 6) for i in picks], {f'{i * DT:g}': gaps.get(i) for i in picks}
 
 
 def plot(resources, last, times, path):
@@ -661,8 +549,7 @@ def environment():
 def main():
     assert same_protocol_code(BACKEND)
     OUT.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(SEED)
-    check, sims = Checks(), {}
+    check = Checks()
     commitment, resources, ledger = M.standing(()), (), ()
     entries = []
     for spec in SCENARIO:
@@ -674,7 +561,7 @@ def main():
         for o in (() if record['admission'] is None else record['admission'].candidates):
             offer_record(o, resources)
         t = perf_counter()
-        detail = check_attempt(check, spec, record, commitment, resources, ledger, after, sims, rng)
+        detail = check_attempt(check, spec, record, commitment, resources, ledger, after)
         entries.append(log_entry(spec, record, resources, detail, compute, dict(checks=perf_counter() - t)))
         print(f"{spec.request.client}: {entries[-1]['admission']:14s} {entries[-1]['outcome']:8s} "
               f"rounds={len(entries[-1]['rounds'])} q*={entries[-1]['q_star']} K*={entries[-1]['K_star']} "
@@ -706,8 +593,7 @@ def main():
     summary = dict(seed=SEED, round_budget=ROUND_BUDGET, price_grid=f'€{GRID[0]}..€{GRID[-1]} step €1',
                    owner=dict(target=str(OWNER['target']), minimum=str(OWNER['minimum']), kappa=str(KAPPA)),
                    model='point vehicle (x, y, h, v) with a disk body of radius 0.075 m; clearance 2·0.075 m',
-                   samples_per_vehicle=SAMPLES, control_grid=f'{CONTROL_POINTS}x{CONTROL_POINTS}', substeps=SUBSTEPS,
-                   tolerance=TOL,
+                   tolerance=TOL, protocol_shared=protocol_shared(),
                    checks={k: dict(evaluated=n, violations=bad) for k, (n, bad) in check.counts.items()},
                    violations=check.violations[:50], branches=branches, comparison=comparison,
                    committed=[RECORDS[id(o)]['id'] for o in resources])
@@ -715,7 +601,10 @@ def main():
     (OUT / 'environment.json').write_text(json.dumps(environment(), indent=1, default=float))
     write_table(entries, OUT / 'table.csv')
     if not check.violations and len(entries) == len(SCENARIO) and entries[-1]['outcome'] == 'ACCEPTED':
-        plot(resources, resources[-1], FIGURE_TIMES, OUT / 'figure.pdf')   # only for a complete, clean run
+        times, gaps = figure_times(resources[-1], resources[:-1])
+        summary['figure'] = dict(times=times, closest_gap_m=gaps)
+        (OUT / 'log.json').write_text(json.dumps(dict(summary=summary, requests=entries), indent=1, ensure_ascii=False))
+        plot(resources, resources[-1], times, OUT / 'figure.pdf')   # only for a complete, clean run
 
     for name, c in summary['checks'].items():
         print(f'{name:48s} {c["evaluated"]:5d} evaluated, {c["violations"]} violations')
@@ -724,8 +613,6 @@ def main():
     if check.violations or not all(branches.values()):
         sys.exit('FAILED: ' + '; '.join(check.violations[:5] or ['branch coverage']))
 
-
-FIGURE_TIMES = (1.5, 5.5, 8.0)
 
 if __name__ == '__main__':
     main()
