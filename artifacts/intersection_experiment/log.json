@@ -9,101 +9,80 @@
    "kappa": "1"
   },
   "model": "point vehicle (x, y, h, v) with a disk body of radius 0.075 m; clearance 2·0.075 m",
-  "samples_per_vehicle": 25,
-  "control_grid": "9x9",
-  "substeps": 10,
   "tolerance": 2e-05,
+  "protocol_shared": {
+   "attempt_shared": true,
+   "bargain_code_shared": true,
+   "commit_shared": true,
+   "validators_shared": true,
+   "backend_fields_differing": [
+    "admit",
+    "generate",
+    "utility",
+    "validate_offers"
+   ]
+  },
   "checks": {
-   "2 certified: notebook covers = independent coverage": {
-    "evaluated": 3,
+   "2 certified flag = independent coverage": {
+    "evaluated": 15,
     "violations": 0
    },
-   "2 offer certified: E_in×J covered": {
-    "evaluated": 2,
+   "2 offer covers E_in×J": {
+    "evaluated": 11,
     "violations": 0
    },
-   "2 offer certified: within C_j, E_in→E_out": {
-    "evaluated": 2,
+   "2 offer within C_j": {
+    "evaluated": 11,
     "violations": 0
    },
-   "2 offer compatible: avoids D_j": {
-    "evaluated": 2,
+   "2 offer leads E_in→E_out": {
+    "evaluated": 11,
     "violations": 0
    },
-   "S1 candidates order-independent, inputs untouched": {
+   "3 offer compatible: avoids D_j": {
+    "evaluated": 11,
+    "violations": 0
+   },
+   "4 candidates order-independent; caches, inputs, tubes unchanged": {
+    "evaluated": 5,
+    "violations": 0
+   },
+   "5 no computation after admission": {
+    "evaluated": 5,
+    "violations": 0
+   },
+   "5 commit = priced offer (ID, tube hash)": {
+    "evaluated": 4,
+    "violations": 0
+   },
+   "5 committed tubes unchanged": {
+    "evaluated": 5,
+    "violations": 0
+   },
+   "6 bargaining and commit validators": {
+    "evaluated": 5,
+    "violations": 0
+   },
+   "7 protocol code shared with charging": {
+    "evaluated": 5,
+    "violations": 0
+   },
+   "1 committed corridors disjoint (2·body)": {
+    "evaluated": 11,
+    "violations": 0
+   },
+   "5 NO-BLA/rejection leaves commitments unchanged": {
     "evaluated": 1,
     "violations": 0
-   },
-   "3 no computation after admission": {
-    "evaluated": 1,
-    "violations": 0
-   },
-   "3 commit = priced offer (ID, tube hash)": {
-    "evaluated": 1,
-    "violations": 0
-   },
-   "3 committed tubes unchanged": {
-    "evaluated": 1,
-    "violations": 0
-   },
-   "4 validators": {
-    "evaluated": 1,
-    "violations": 0
-   },
-   "4 bargain/commit = protocol.ipynb code": {
-    "evaluated": 1,
-    "violations": 0
-   },
-   "5 non-blocking: driving limits nonempty": {
-    "evaluated": 1,
-    "violations": 1
-   },
-   "6 sampled: entry state in corridor": {
-    "evaluated": 25,
-    "violations": 0
-   },
-   "6 sampled: stays in corridor": {
-    "evaluated": 25,
-    "violations": 14
-   },
-   "6 sampled: not blocked": {
-    "evaluated": 25,
-    "violations": 3
-   },
-   "6 sampled: exits through E_out in K": {
-    "evaluated": 25,
-    "violations": 3
    }
   },
-  "violations": [
-   "5 non-blocking: driving limits nonempty: request A: 311/13921 cells",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: not blocked: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: exits through E_out in K: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: not blocked: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: exits through E_out in K: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 4.575, 'blocked': 5.5, 'exited': None}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 4.35, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.275, 'blocked': None, 'exited': 6.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 7.05, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 6.35, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
-   "6 sampled: not blocked: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
-   "6 sampled: exits through E_out in K: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 3.525, 'blocked': 4.75, 'exited': None}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 5.025, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 4.275, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.0, 'entry_in_corridor': True, 'left_corridor': 2.175, 'blocked': None, 'exited': 6.0}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 5.1, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 5.85, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.5, 'entry_in_corridor': True, 'left_corridor': 6.525, 'blocked': None, 'exited': 7.25}",
-   "6 sampled: stays in corridor: request A {'entry_t': 0.25, 'entry_in_corridor': True, 'left_corridor': 6.05, 'blocked': None, 'exited': 7.25}"
-  ],
+  "violations": [],
   "branches": {
    "as requested, accepted": true,
-   "simultaneous non-conflicting pair": false,
-   "NO-BLA, budget exhausted": false,
-   "rejected on price, then accepted": false,
-   "last: AIM rejects, adapted, ~3 offers, accepted": false
+   "simultaneous non-conflicting pair": true,
+   "NO-BLA, budget exhausted": true,
+   "rejected on price, then accepted": true,
+   "last: AIM rejects, adapted, ~3 offers, accepted": true
   },
   "comparison": {
    "charging": {
@@ -116,11 +95,28 @@
     "access": "time-state corridor Φ_j ⊆ (t, x, y, h, v) grid; R = □(X → Φ_j)",
     "satisfiability": "pyspect TLT / HJ reachability on a grid (sat∃(φ_j), passes 3–4)",
     "offer_parameter": "exit window K",
-    "median_request_s": 4.338615667074919,
-    "median_corridor_s": 0.6582016441971064
+    "median_request_s": 2.0495445244014263,
+    "median_corridor_s": 0.6108109941706061
    }
   },
-  "committed": []
+  "committed": [
+   "2f3fa8a271c7220f",
+   "d122e6a702d90fa6",
+   "ee09bb6a1e58750b",
+   "35eb9a381d0728cd"
+  ],
+  "figure": {
+   "times": [
+    5.0,
+    6.0,
+    7.0
+   ],
+   "closest_gap_m": {
+    "5": 0.8000001311302185,
+    "6": 0.3999999165534973,
+    "7": 0.3999999165534973
+   }
+  }
  },
  "requests": [
   {
@@ -383,31 +379,32 @@
    "q_star": "10",
    "compute": {
     "sat_seconds": [
-     1.5476057222113013
+     1.5354465399868786
     ],
     "corridor_seconds": [
-     1.2639359701424837,
-     0.6582016441971064,
-     0.6487333648838103
+     1.2531092180870473,
+     0.6586274867877364,
+     0.6481405729427934
     ],
-    "per_offer_seconds": 0.8569569930744668
+    "per_offer_seconds": 0.8532924259391924
    },
    "seconds": {
-    "admit": 4.336867646314204,
-    "generate": 3.43983992934227e-06,
-    "bargain": 0.0008361060172319412,
-    "commit": 0.0009084749035537243,
-    "total": 4.338615667074919,
-    "checks": 5.915282171685249
+    "admit": 4.315530262887478,
+    "generate": 4.299916326999664e-06,
+    "bargain": 0.0008716853335499763,
+    "commit": 0.0009089247323572636,
+    "total": 4.317315172869712,
+    "checks": 1.7737206080928445
    },
    "memory": {
     "tube_mib": 21.03302001953125,
-    "peak_rss_mib": 2470.88671875
+    "peak_rss_mib": 2418.17578125
    },
    "checks_detail": {
     "worker": {
      "order_independent": true,
      "inputs_untouched": true,
+     "caches_untouched": true,
      "readonly": true,
      "hashes": {
       "0": "5d98d64f2b76f323f0b363604cdf35b9fc352ef1bf3decd042c52b5b1f81a351",
@@ -415,234 +412,1384 @@
       "2": "18bd5f398a139c2f6ba74087107335a52452598827f25b7fd8779aa228984f50"
      }
     },
-    "non_blocking": {
-     "cells": 13921,
-     "empty": 311,
-     "where": [
-      {
-       "t": 0.0,
-       "cells": 2
-      },
-      {
-       "t": 0.25,
-       "cells": 6
-      },
-      {
-       "t": 0.5,
-       "cells": 8
-      },
-      {
-       "t": 0.75,
-       "cells": 10
-      },
-      {
-       "t": 1.0,
-       "cells": 14
-      },
-      {
-       "t": 1.25,
-       "cells": 12
-      },
-      {
-       "t": 1.5,
-       "cells": 18
-      },
-      {
-       "t": 1.75,
-       "cells": 16
-      },
-      {
-       "t": 2.0,
-       "cells": 10
-      },
-      {
-       "t": 2.25,
-       "cells": 16
-      }
-     ],
-     "seconds": 1.6834016810171306
+    "protocol_shared": {
+     "attempt_shared": true,
+     "bargain_code_shared": true,
+     "commit_shared": true,
+     "validators_shared": true,
+     "backend_fields_differing": [
+      "admit",
+      "generate",
+      "utility",
+      "validate_offers"
+     ]
+    }
+   }
+  },
+  {
+   "request": "B",
+   "branch": "simultaneous, non-conflicting",
+   "received": -4.0,
+   "theta": {
+    "route": "west→west",
+    "manoeuvre": "straight",
+    "J": [
+     0.0,
+     0.5
+    ]
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "20",
+    "gamma": "1/2",
+    "kappa": "1",
+    "targets": {
+     "owner": "6",
+     "client": "5"
     },
-    "sampling": {
-     "samples": 25,
-     "outcomes": [
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": 4.275,
-       "blocked": 5.5,
-       "exited": null
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": 4.575,
-       "blocked": 5.5,
-       "exited": null
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": 4.35,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": 3.275,
-       "blocked": null,
-       "exited": 6.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": 7.05,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": 6.35,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": 3.525,
-       "blocked": 4.75,
-       "exited": null
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 7.0
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": 5.025,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": 4.275,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": 2.175,
-       "blocked": null,
-       "exited": 6.0
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.75
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": 5.1,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.0
-      },
-      {
-       "entry_t": 0.0,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 7.0
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": 5.85,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": 6.525,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": 6.05,
-       "blocked": null,
-       "exited": 7.25
-      },
-      {
-       "entry_t": 0.5,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.25
-      },
-      {
-       "entry_t": 0.25,
-       "entry_in_corridor": true,
-       "left_corridor": null,
-       "blocked": null,
-       "exited": 6.0
-      }
+    "minima": {
+     "owner": "1",
+     "client": "1"
+    }
+   },
+   "standing": [
+    "2f3fa8a271c7220f"
+   ],
+   "commitment_version": {
+    "n": 1,
+    "digest": "b02af18531eb738e"
+   },
+   "tried": [
+    {
+     "J": [
+      0.0,
+      0.5
      ],
-     "pairs": {},
-     "seconds": 2.4602261250838637
+     "fate": "admitted"
+    }
+   ],
+   "entry_condition_as_requested": true,
+   "baseline_aim": "reserve",
+   "admission": "as requested",
+   "J_admitted": [
+    0.0,
+    0.5
+   ],
+   "offers": {
+    "exit_windows_tried": 3,
+    "generated": 3,
+    "certified": 2,
+    "compatible": 3,
+    "offered": [
+     "d122e6a702d90fa6",
+     "195e0efe18b69b99"
+    ]
+   },
+   "candidates": [
+    {
+     "id": "7da209d59852a73f",
+     "theta": {
+      "client": "B",
+      "inbound": "west",
+      "outbound": "west",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      5.25,
+      6.25
+     ],
+     "candidate": 1,
+     "tube": {
+      "sha256": "25a0c09b397c05ef7bbe07b9c850ef55e7a06df7224733e3c1486fe11e5a4dad",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 563,
+     "volume_m2s": "563/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 1,
+      "digest": "b02af18531eb738e"
+     },
+     "evidence": {
+      "certified": false,
+      "cells_0_lt_V_le_tol": 688,
+      "coverage_independent": false,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       6.25
+      ],
+      "conflict_cells": {
+       "A": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "d122e6a702d90fa6",
+     "theta": {
+      "client": "B",
+      "inbound": "west",
+      "outbound": "west",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      6.0,
+      7.25
+     ],
+     "candidate": 2,
+     "tube": {
+      "sha256": "77532e3d14b27ce50094af9b63b219fca32621ca6fde7b533c3653a05e18fc87",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1233,
+     "volume_m2s": "1233/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 1,
+      "digest": "b02af18531eb738e"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 1609,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       7.25
+      ],
+      "conflict_cells": {
+       "A": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "195e0efe18b69b99",
+     "theta": {
+      "client": "B",
+      "inbound": "west",
+      "outbound": "west",
+      "J": [
+       0.0,
+       0.5
+      ]
+     },
+     "time_origin": 0.0,
+     "entry_window": [
+      0.0,
+      0.5
+     ],
+     "exit_window": [
+      7.0,
+      8.25
+     ],
+     "candidate": 3,
+     "tube": {
+      "sha256": "f8f84c7a932b4624f135d1f96441065c49d5df0447e96264d35de0f6a9ab0c66",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1889,
+     "volume_m2s": "1889/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 1,
+      "digest": "b02af18531eb738e"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 2448,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       0.0,
+       8.25
+      ],
+      "conflict_cells": {
+       "A": 0
+      },
+      "compatible": true
+     }
+    }
+   ],
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "d122e6a702d90fa6",
+     "exit_window": [
+      6.0,
+      7.25
+     ],
+     "price": "10",
+     "targets": {
+      "owner": "6",
+      "client": "5"
+     },
+     "utilities": {
+      "owner": "2767/400",
+      "client": "51/8"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "accepted": "d122e6a702d90fa6",
+   "K_star": [
+    6.0,
+    7.25
+   ],
+   "q_star": "10",
+   "compute": {
+    "sat_seconds": [
+     0.10731387184932828
+    ],
+    "corridor_seconds": [
+     0.1939069665968418,
+     0.21495303278788924,
+     0.20654804771766067
+    ],
+    "per_offer_seconds": 0.20513601570079723
+   },
+   "seconds": {
+    "admit": 0.7832197169773281,
+    "generate": 2.7101486921310425e-06,
+    "bargain": 0.0008375346660614014,
+    "commit": 0.001103023998439312,
+    "total": 0.7851629857905209,
+    "checks": 1.8259614272974432
+   },
+   "memory": {
+    "tube_mib": 21.03302001953125,
+    "peak_rss_mib": 2439.71875
+   },
+   "checks_detail": {
+    "worker": {
+     "order_independent": true,
+     "inputs_untouched": true,
+     "caches_untouched": true,
+     "readonly": true,
+     "hashes": {
+      "0": "25a0c09b397c05ef7bbe07b9c850ef55e7a06df7224733e3c1486fe11e5a4dad",
+      "1": "77532e3d14b27ce50094af9b63b219fca32621ca6fde7b533c3653a05e18fc87",
+      "2": "f8f84c7a932b4624f135d1f96441065c49d5df0447e96264d35de0f6a9ab0c66"
+     }
+    },
+    "protocol_shared": {
+     "attempt_shared": true,
+     "bargain_code_shared": true,
+     "commit_shared": true,
+     "validators_shared": true,
+     "backend_fields_differing": [
+      "admit",
+      "generate",
+      "utility",
+      "validate_offers"
+     ]
+    }
+   }
+  },
+  {
+   "request": "C",
+   "branch": "NO-BLA, budget exhausted",
+   "received": -3.0,
+   "theta": {
+    "route": "south→south",
+    "manoeuvre": "straight",
+    "J": [
+     4.0,
+     4.5
+    ]
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "8",
+    "gamma": "1/2",
+    "kappa": "1",
+    "targets": {
+     "owner": "6",
+     "client": "4"
+    },
+    "minima": {
+     "owner": "1",
+     "client": "1"
+    }
+   },
+   "standing": [
+    "2f3fa8a271c7220f",
+    "d122e6a702d90fa6"
+   ],
+   "commitment_version": {
+    "n": 2,
+    "digest": "35d69f92e526a8b7"
+   },
+   "tried": [
+    {
+     "J": [
+      4.0,
+      4.5
+     ],
+     "fate": "admitted"
+    }
+   ],
+   "entry_condition_as_requested": true,
+   "baseline_aim": "reserve",
+   "admission": "as requested",
+   "J_admitted": [
+    4.0,
+    4.5
+   ],
+   "offers": {
+    "exit_windows_tried": 3,
+    "generated": 3,
+    "certified": 2,
+    "compatible": 3,
+    "offered": [
+     "60b2f33621cff6b1",
+     "836cdac0d8e10495"
+    ]
+   },
+   "candidates": [
+    {
+     "id": "ed57eb7bb9801359",
+     "theta": {
+      "client": "C",
+      "inbound": "south",
+      "outbound": "south",
+      "J": [
+       4.0,
+       4.5
+      ]
+     },
+     "time_origin": 4.0,
+     "entry_window": [
+      4.0,
+      4.5
+     ],
+     "exit_window": [
+      9.25,
+      10.25
+     ],
+     "candidate": 1,
+     "tube": {
+      "sha256": "8e11a7f133e82b31bcc614081444d8c1894474620856d966604b4301a9f9a30c",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 493,
+     "volume_m2s": "493/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": false,
+      "cells_0_lt_V_le_tol": 630,
+      "coverage_independent": false,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       4.0,
+       10.25
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "60b2f33621cff6b1",
+     "theta": {
+      "client": "C",
+      "inbound": "south",
+      "outbound": "south",
+      "J": [
+       4.0,
+       4.5
+      ]
+     },
+     "time_origin": 4.0,
+     "entry_window": [
+      4.0,
+      4.5
+     ],
+     "exit_window": [
+      10.0,
+      11.25
+     ],
+     "candidate": 2,
+     "tube": {
+      "sha256": "47b3a2e992530e675a784211204e207fdecbb5c5fc520906394bacaa967d763f",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1148,
+     "volume_m2s": "287/100",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 1548,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       4.0,
+       11.25
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "836cdac0d8e10495",
+     "theta": {
+      "client": "C",
+      "inbound": "south",
+      "outbound": "south",
+      "J": [
+       4.0,
+       4.5
+      ]
+     },
+     "time_origin": 4.0,
+     "entry_window": [
+      4.0,
+      4.5
+     ],
+     "exit_window": [
+      11.0,
+      12.25
+     ],
+     "candidate": 3,
+     "tube": {
+      "sha256": "9f3a9cfe57e8c934572eca8ded66f8d1399cb4c67eca287bf5aa851872710a35",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1801,
+     "volume_m2s": "1801/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 2387,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       4.0,
+       12.25
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    }
+   ],
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "60b2f33621cff6b1",
+     "exit_window": [
+      10.0,
+      11.25
+     ],
+     "price": "9",
+     "targets": {
+      "owner": "6",
+      "client": "4"
+     },
+     "utilities": {
+      "owner": "613/100",
+      "client": "-37/8"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "60b2f33621cff6b1",
+     "exit_window": [
+      10.0,
+      11.25
+     ],
+     "price": "1",
+     "targets": {
+      "owner": "13/3",
+      "client": "3"
+     },
+     "utilities": {
+      "owner": "-187/100",
+      "client": "27/8"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 3,
+     "proposer": "owner",
+     "offer": "60b2f33621cff6b1",
+     "exit_window": [
+      10.0,
+      11.25
+     ],
+     "price": "6",
+     "targets": {
+      "owner": "8/3",
+      "client": "2"
+     },
+     "utilities": {
+      "owner": "313/100",
+      "client": "-13/8"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 4,
+     "proposer": "client",
+     "offer": "60b2f33621cff6b1",
+     "exit_window": [
+      10.0,
+      11.25
+     ],
+     "price": "3",
+     "targets": {
+      "owner": "1",
+      "client": "1"
+     },
+     "utilities": {
+      "owner": "13/100",
+      "client": "11/8"
+     },
+     "response": "reject"
+    }
+   ],
+   "outcome": "NO-BLA",
+   "accepted": null,
+   "K_star": null,
+   "q_star": null,
+   "compute": {
+    "sat_seconds": [
+     0.1997055457904935
+    ],
+    "corridor_seconds": [
+     0.256992946844548,
+     0.21143733290955424,
+     0.21023732936009765
+    ],
+    "per_offer_seconds": 0.22622253637139997
+   },
+   "seconds": {
+    "admit": 0.9413852458819747,
+    "generate": 2.4796463549137115e-06,
+    "bargain": 0.0018813596107065678,
+    "commit": 2.8400681912899017e-06,
+    "total": 0.9432719252072275,
+    "checks": 1.8573122466914356
+   },
+   "memory": {
+    "tube_mib": 21.03302001953125,
+    "peak_rss_mib": 2461.77734375
+   },
+   "checks_detail": {
+    "worker": {
+     "order_independent": true,
+     "inputs_untouched": true,
+     "caches_untouched": true,
+     "readonly": true,
+     "hashes": {
+      "0": "8e11a7f133e82b31bcc614081444d8c1894474620856d966604b4301a9f9a30c",
+      "1": "47b3a2e992530e675a784211204e207fdecbb5c5fc520906394bacaa967d763f",
+      "2": "9f3a9cfe57e8c934572eca8ded66f8d1399cb4c67eca287bf5aa851872710a35"
+     }
+    },
+    "protocol_shared": {
+     "attempt_shared": true,
+     "bargain_code_shared": true,
+     "commit_shared": true,
+     "validators_shared": true,
+     "backend_fields_differing": [
+      "admit",
+      "generate",
+      "utility",
+      "validate_offers"
+     ]
+    }
+   }
+  },
+  {
+   "request": "D",
+   "branch": "rejected on price, then accepted",
+   "received": -2.0,
+   "theta": {
+    "route": "east→south",
+    "manoeuvre": "right",
+    "J": [
+     3.0,
+     3.5
+    ]
+   },
+   "adaptations": [],
+   "policy": {
+    "v": "20",
+    "gamma": "1/2",
+    "kappa": "1",
+    "targets": {
+     "owner": "6",
+     "client": "11"
+    },
+    "minima": {
+     "owner": "1",
+     "client": "1"
+    }
+   },
+   "standing": [
+    "2f3fa8a271c7220f",
+    "d122e6a702d90fa6"
+   ],
+   "commitment_version": {
+    "n": 2,
+    "digest": "35d69f92e526a8b7"
+   },
+   "tried": [
+    {
+     "J": [
+      3.0,
+      3.5
+     ],
+     "fate": "admitted"
+    }
+   ],
+   "entry_condition_as_requested": true,
+   "baseline_aim": "reserve",
+   "admission": "as requested",
+   "J_admitted": [
+    3.0,
+    3.5
+   ],
+   "offers": {
+    "exit_windows_tried": 3,
+    "generated": 3,
+    "certified": 2,
+    "compatible": 3,
+    "offered": [
+     "ee09bb6a1e58750b",
+     "f07e80d3ea81769a"
+    ]
+   },
+   "candidates": [
+    {
+     "id": "17fdeb9148efb098",
+     "theta": {
+      "client": "D",
+      "inbound": "east",
+      "outbound": "south",
+      "J": [
+       3.0,
+       3.5
+      ]
+     },
+     "time_origin": 3.0,
+     "entry_window": [
+      3.0,
+      3.5
+     ],
+     "exit_window": [
+      6.25,
+      7.25
+     ],
+     "candidate": 1,
+     "tube": {
+      "sha256": "49195bcc0ed59c9a99a69c92bb00b251297842c2ed4cda2c47c6fdb56fb640a0",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 500,
+     "volume_m2s": "5/4",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": false,
+      "cells_0_lt_V_le_tol": 540,
+      "coverage_independent": false,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       3.0,
+       7.25
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "ee09bb6a1e58750b",
+     "theta": {
+      "client": "D",
+      "inbound": "east",
+      "outbound": "south",
+      "J": [
+       3.0,
+       3.5
+      ]
+     },
+     "time_origin": 3.0,
+     "entry_window": [
+      3.0,
+      3.5
+     ],
+     "exit_window": [
+      7.0,
+      8.0
+     ],
+     "candidate": 2,
+     "tube": {
+      "sha256": "89600a44582fcc007e6f97de152ef7095df681bed3772b5793e62652fcfcbd0b",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 908,
+     "volume_m2s": "227/100",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 955,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       3.0,
+       8.0
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "f07e80d3ea81769a",
+     "theta": {
+      "client": "D",
+      "inbound": "east",
+      "outbound": "south",
+      "J": [
+       3.0,
+       3.5
+      ]
+     },
+     "time_origin": 3.0,
+     "entry_window": [
+      3.0,
+      3.5
+     ],
+     "exit_window": [
+      7.75,
+      8.5
+     ],
+     "candidate": 3,
+     "tube": {
+      "sha256": "6d3d8d55f08e252d8f0ce56bb7bfb5d472426aea844f76ceb969a97633e77e8f",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1189,
+     "volume_m2s": "1189/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 2,
+      "digest": "35d69f92e526a8b7"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 1173,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       3.0,
+       8.5
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0
+      },
+      "compatible": true
+     }
+    }
+   ],
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "ee09bb6a1e58750b",
+     "exit_window": [
+      7.0,
+      8.0
+     ],
+     "price": "9",
+     "targets": {
+      "owner": "6",
+      "client": "11"
+     },
+     "utilities": {
+      "owner": "673/100",
+      "client": "17/2"
+     },
+     "response": "reject"
+    },
+    {
+     "round": 2,
+     "proposer": "client",
+     "offer": "ee09bb6a1e58750b",
+     "exit_window": [
+      7.0,
+      8.0
+     ],
+     "price": "9",
+     "targets": {
+      "owner": "13/3",
+      "client": "23/3"
+     },
+     "utilities": {
+      "owner": "673/100",
+      "client": "17/2"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "accepted": "ee09bb6a1e58750b",
+   "K_star": [
+    7.0,
+    8.0
+   ],
+   "q_star": "9",
+   "compute": {
+    "sat_seconds": [
+     0.12342007597908378
+    ],
+    "corridor_seconds": [
+     0.6108109941706061,
+     0.6296215928159654,
+     0.6190837793983519
+    ],
+    "per_offer_seconds": 0.6198387887949744
+   },
+   "seconds": {
+    "admit": 2.0469849379733205,
+    "generate": 2.1401792764663696e-06,
+    "bargain": 0.0010245242156088352,
+    "commit": 0.0015329220332205296,
+    "total": 2.0495445244014263,
+    "checks": 1.8336229952983558
+   },
+   "memory": {
+    "tube_mib": 21.03302001953125,
+    "peak_rss_mib": 2569.98828125
+   },
+   "checks_detail": {
+    "worker": {
+     "order_independent": true,
+     "inputs_untouched": true,
+     "caches_untouched": true,
+     "readonly": true,
+     "hashes": {
+      "0": "49195bcc0ed59c9a99a69c92bb00b251297842c2ed4cda2c47c6fdb56fb640a0",
+      "1": "89600a44582fcc007e6f97de152ef7095df681bed3772b5793e62652fcfcbd0b",
+      "2": "6d3d8d55f08e252d8f0ce56bb7bfb5d472426aea844f76ceb969a97633e77e8f"
+     }
+    },
+    "protocol_shared": {
+     "attempt_shared": true,
+     "bargain_code_shared": true,
+     "commit_shared": true,
+     "validators_shared": true,
+     "backend_fields_differing": [
+      "admit",
+      "generate",
+      "utility",
+      "validate_offers"
+     ]
+    }
+   }
+  },
+  {
+   "request": "E",
+   "branch": "entry condition fails; adapted",
+   "received": -1.0,
+   "theta": {
+    "route": "north→west",
+    "manoeuvre": "left",
+    "J": [
+     1.0,
+     1.5
+    ]
+   },
+   "adaptations": [
+    {
+     "route": "north→west",
+     "manoeuvre": "left",
+     "J": [
+      5.0,
+      5.5
+     ]
+    }
+   ],
+   "policy": {
+    "v": "24",
+    "gamma": "1/4",
+    "kappa": "1",
+    "targets": {
+     "owner": "6",
+     "client": "8"
+    },
+    "minima": {
+     "owner": "1",
+     "client": "1"
+    }
+   },
+   "standing": [
+    "2f3fa8a271c7220f",
+    "d122e6a702d90fa6",
+    "ee09bb6a1e58750b"
+   ],
+   "commitment_version": {
+    "n": 3,
+    "digest": "343821c3bd652bf5"
+   },
+   "tried": [
+    {
+     "J": [
+      1.0,
+      1.5
+     ],
+     "fate": "entry condition fails"
+    },
+    {
+     "J": [
+      5.0,
+      5.5
+     ],
+     "fate": "admitted"
+    }
+   ],
+   "entry_condition_as_requested": false,
+   "baseline_aim": "reject (E_in×J ⊄ sat∃(φ))",
+   "admission": "adapted (1)",
+   "J_admitted": [
+    5.0,
+    5.5
+   ],
+   "offers": {
+    "exit_windows_tried": 3,
+    "generated": 3,
+    "certified": 3,
+    "compatible": 3,
+    "offered": [
+     "35eb9a381d0728cd",
+     "1dafe87ebbec1bc8",
+     "be754a30239c9590"
+    ]
+   },
+   "candidates": [
+    {
+     "id": "35eb9a381d0728cd",
+     "theta": {
+      "client": "E",
+      "inbound": "north",
+      "outbound": "west",
+      "J": [
+       5.0,
+       5.5
+      ]
+     },
+     "time_origin": 5.0,
+     "entry_window": [
+      5.0,
+      5.5
+     ],
+     "exit_window": [
+      11.0,
+      12.5
+     ],
+     "candidate": 1,
+     "tube": {
+      "sha256": "77b7d9d172f275336fd2311795321dad9419e07f7c29fdd8875e02a151701898",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 1102,
+     "volume_m2s": "551/200",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 3,
+      "digest": "343821c3bd652bf5"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 1213,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       5.0,
+       12.5
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0,
+       "D": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "1dafe87ebbec1bc8",
+     "theta": {
+      "client": "E",
+      "inbound": "north",
+      "outbound": "west",
+      "J": [
+       5.0,
+       5.5
+      ]
+     },
+     "time_origin": 5.0,
+     "entry_window": [
+      5.0,
+      5.5
+     ],
+     "exit_window": [
+      12.25,
+      13.75
+     ],
+     "candidate": 2,
+     "tube": {
+      "sha256": "f96cfe6e855b762fe40d6204886a93ac45decbe61b722a8e310df518073f49ed",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 2167,
+     "volume_m2s": "2167/400",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 3,
+      "digest": "343821c3bd652bf5"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 2280,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       5.0,
+       13.75
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0,
+       "D": 0
+      },
+      "compatible": true
+     }
+    },
+    {
+     "id": "be754a30239c9590",
+     "theta": {
+      "client": "E",
+      "inbound": "north",
+      "outbound": "west",
+      "J": [
+       5.0,
+       5.5
+      ]
+     },
+     "time_origin": 5.0,
+     "entry_window": [
+      5.0,
+      5.5
+     ],
+     "exit_window": [
+      13.5,
+      15.0
+     ],
+     "candidate": 3,
+     "tube": {
+      "sha256": "d2b35c2388c3092455181086e990aacc7a1d5738de8f57589bc7dfb9be217a3a",
+      "shape": [
+       41,
+       41,
+       41,
+       16,
+       5
+      ],
+      "dtype": "float32",
+      "nbytes": 22054720,
+      "writeable": false
+     },
+     "reserved_cells": 3124,
+     "volume_m2s": "781/100",
+     "grid": "13da2a7eb57115af",
+     "commitment_version": {
+      "n": 3,
+      "digest": "343821c3bd652bf5"
+     },
+     "evidence": {
+      "certified": true,
+      "cells_0_lt_V_le_tol": 3208,
+      "coverage_independent": true,
+      "entry_points": 243,
+      "cells_outside_rules": 0,
+      "first_sample_outside_entry_zone": 0,
+      "last_sample_outside_exit_zone": 0,
+      "corridor_span": [
+       5.0,
+       15.0
+      ],
+      "conflict_cells": {
+       "A": 0,
+       "B": 0,
+       "D": 0
+      },
+      "compatible": true
+     }
+    }
+   ],
+   "rounds": [
+    {
+     "round": 1,
+     "proposer": "owner",
+     "offer": "35eb9a381d0728cd",
+     "exit_window": [
+      11.0,
+      12.5
+     ],
+     "price": "9",
+     "targets": {
+      "owner": "6",
+      "client": "8"
+     },
+     "utilities": {
+      "owner": "1249/200",
+      "client": "97/8"
+     },
+     "response": "accept"
+    }
+   ],
+   "outcome": "ACCEPTED",
+   "accepted": "35eb9a381d0728cd",
+   "K_star": [
+    11.0,
+    12.5
+   ],
+   "q_star": "9",
+   "compute": {
+    "sat_seconds": [
+     0.12152081588283181,
+     0.11811499390751123
+    ],
+    "corridor_seconds": [
+     0.6367112752050161,
+     0.6448219809681177,
+     0.5933765880763531
+    ],
+    "per_offer_seconds": 0.6249699480831623
+   },
+   "seconds": {
+    "admit": 2.206150121986866,
+    "generate": 2.299901098012924e-06,
+    "bargain": 0.0008023646660149097,
+    "commit": 0.0018968903459608555,
+    "total": 2.2088516768999398,
+    "checks": 2.094801341649145
+   },
+   "memory": {
+    "tube_mib": 21.03302001953125,
+    "peak_rss_mib": 2659.484375
+   },
+   "checks_detail": {
+    "worker": {
+     "order_independent": true,
+     "inputs_untouched": true,
+     "caches_untouched": true,
+     "readonly": true,
+     "hashes": {
+      "0": "77b7d9d172f275336fd2311795321dad9419e07f7c29fdd8875e02a151701898",
+      "1": "f96cfe6e855b762fe40d6204886a93ac45decbe61b722a8e310df518073f49ed",
+      "2": "d2b35c2388c3092455181086e990aacc7a1d5738de8f57589bc7dfb9be217a3a"
+     }
+    },
+    "protocol_shared": {
+     "attempt_shared": true,
+     "bargain_code_shared": true,
+     "commit_shared": true,
+     "validators_shared": true,
+     "backend_fields_differing": [
+      "admit",
+      "generate",
+      "utility",
+      "validate_offers"
+     ]
     }
    }
   }

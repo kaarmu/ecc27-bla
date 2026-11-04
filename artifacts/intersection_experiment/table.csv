@@ -1,2 +1,6 @@
 request,route,J_s,baseline_aim,admission,J_admitted_s,offers_gen,offers_cert,offers_compat,rounds,outcome,K_star_s,q_star_eur,time_s
-A,east→east,"[0, 0.5]",reserve,as requested,"[0, 0.5]",3,2,3,1,ACCEPTED,"[6, 7.25]",10,4.34
+A,east→east,"[0, 0.5]",reserve,as requested,"[0, 0.5]",3,2,3,1,ACCEPTED,"[6, 7.25]",10,4.32
+B,west→west,"[0, 0.5]",reserve,as requested,"[0, 0.5]",3,2,3,1,ACCEPTED,"[6, 7.25]",10,0.79
+C,south→south,"[4, 4.5]",reserve,as requested,"[4, 4.5]",3,2,3,4,NO-BLA,,,0.94
+D,east→south,"[3, 3.5]",reserve,as requested,"[3, 3.5]",3,2,3,2,ACCEPTED,"[7, 8]",9,2.05
+E,north→west,"[1, 1.5]",reject,adapted (1),"[5, 5.5]",3,3,3,1,ACCEPTED,"[11, 12.5]",9,2.21
