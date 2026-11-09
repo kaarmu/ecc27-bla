@@ -11,7 +11,7 @@ c6a324aab36ac536dcc82b6873394dd1fd23bbbc:
 The legacy HJ solver, vehicle dynamics, ROS, NATS, session manager, automatic
 reservation commitment and machine-specific caches are not copied.
 All reachability integration is delegated to pyspect[hj_reachability].
-See docs/LTMS_REACHABILITY.md for documented differences from the original.
+See notebooks/ltms_blas.ipynb for the intersection model and numerical workflow.
 
 Original license follows.
 

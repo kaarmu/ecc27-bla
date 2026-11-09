@@ -1,4 +1,4 @@
-"""Small real-backend smoke run; see docs/LTMS_REACHABILITY.md."""
+"""Small real-backend smoke run; see notebooks/ltms_blas.ipynb for the full scenario."""
 import json
 from importlib.metadata import version
 

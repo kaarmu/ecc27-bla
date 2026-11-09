@@ -30,7 +30,7 @@ def __getattr__(name):
     except ModuleNotFoundError as error:
         raise ModuleNotFoundError(
             "LTMS numerical operations require pyspect[hj_reachability]==1.2 "
-            "and pillow. See docs/LTMS_REACHABILITY.md for environment setup."
+            "and pillow. See README.md for the reachability experiment command."
         ) from error
     globals()[name] = value
     return value
